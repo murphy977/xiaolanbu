@@ -21,12 +21,12 @@ export class DeploymentsController {
   }
 
   @Patch(":deploymentId/status")
-  updateDeploymentStatus(
+  async updateDeploymentStatus(
     @Param("deploymentId") deploymentId: string,
     @Body() body: UpdateDeploymentStatusDto,
   ) {
     return {
-      deployment: this.deploymentsService.updateDeploymentStatus(deploymentId, body.status),
+      deployment: await this.deploymentsService.updateDeploymentStatus(deploymentId, body.status),
     };
   }
 }

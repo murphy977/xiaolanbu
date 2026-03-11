@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
 
 import {
   BillingFeedRecord,
@@ -13,6 +13,7 @@ import {
   WalletTransactionRecord,
   WorkspaceRecord,
 } from "./models";
+import { PostgresStateService } from "./postgres-state.service";
 
 interface CreateDeploymentInput {
   id?: string;
@@ -33,7 +34,11 @@ interface CreateDeploymentInput {
 }
 
 @Injectable()
-export class StoreService {
+export class StoreService implements OnModuleInit {
+  private readonly logger = new Logger(StoreService.name);
+
+  constructor(private readonly postgresStateService: PostgresStateService) {}
+
   private readonly currentUser: UserRecord = {
     id: "user_001",
     displayName: "午松",
@@ -51,7 +56,7 @@ export class StoreService {
     },
   ];
 
-  private readonly deployments: DeploymentRecord[] = [
+  private deployments: DeploymentRecord[] = [
     {
       id: "dep_cloud_prod",
       workspaceId: "ws_main",
@@ -89,7 +94,7 @@ export class StoreService {
     },
   ];
 
-  private readonly wallets: WalletRecord[] = [
+  private wallets: WalletRecord[] = [
     {
       id: "wallet_main",
       workspaceId: "ws_main",
@@ -153,9 +158,9 @@ export class StoreService {
     },
   ];
 
-  private readonly usageLedger: UsageLedgerRecord[] = [];
+  private usageLedger: UsageLedgerRecord[] = [];
 
-  private readonly walletTransactions: WalletTransactionRecord[] = [
+  private walletTransactions: WalletTransactionRecord[] = [
     {
       id: "txn_001",
       walletId: "wallet_main",
@@ -169,6 +174,46 @@ export class StoreService {
       referenceId: "topup_001",
     },
   ];
+
+  async onModuleInit() {
+    await this.postgresStateService.ensureInitialized();
+
+    if (!this.postgresStateService.isEnabled()) {
+      return;
+    }
+
+    const [persistedDeployments, persistedWallets, persistedUsageLedger, persistedWalletTransactions] =
+      await Promise.all([
+        this.postgresStateService.listDeployments(),
+        this.postgresStateService.listWallets(),
+        this.postgresStateService.listUsageLedger(),
+        this.postgresStateService.listWalletTransactions(),
+      ]);
+
+    this.deployments = this.mergeById(this.deployments, persistedDeployments);
+    this.wallets = this.mergeById(this.wallets, persistedWallets);
+    this.usageLedger = this.mergeById(this.usageLedger, persistedUsageLedger);
+    this.walletTransactions = this.mergeById(this.walletTransactions, persistedWalletTransactions);
+
+    if (persistedDeployments.length === 0) {
+      await Promise.all(this.deployments.map((item) => this.postgresStateService.upsertDeployment(item)));
+    }
+    if (persistedWallets.length === 0) {
+      await Promise.all(this.wallets.map((item) => this.postgresStateService.upsertWallet(item)));
+    }
+    if (persistedUsageLedger.length === 0 && this.usageLedger.length > 0) {
+      await Promise.all(this.usageLedger.map((item) => this.postgresStateService.insertUsageLedger(item)));
+    }
+    if (persistedWalletTransactions.length === 0 && this.walletTransactions.length > 0) {
+      await Promise.all(
+        this.walletTransactions.map((item) => this.postgresStateService.insertWalletTransaction(item)),
+      );
+    }
+
+    this.logger.log(
+      `Loaded persisted state: deployments=${persistedDeployments.length}, wallets=${persistedWallets.length}, ledger=${persistedUsageLedger.length}, transactions=${persistedWalletTransactions.length}`,
+    );
+  }
 
   getCurrentUser() {
     return this.currentUser;
@@ -194,7 +239,7 @@ export class StoreService {
     return this.deployments.filter((item) => item.workspaceId === workspaceId);
   }
 
-  createDeployment(input: CreateDeploymentInput) {
+  async createDeployment(input: CreateDeploymentInput) {
     this.getWorkspace(input.workspaceId);
 
     const record: DeploymentRecord = {
@@ -228,20 +273,23 @@ export class StoreService {
     };
 
     this.deployments.unshift(record);
+    await this.postgresStateService.upsertDeployment(record);
     return record;
   }
 
-  updateDeploymentStatus(deploymentId: string, status: DeploymentStatus) {
+  async updateDeploymentStatus(deploymentId: string, status: DeploymentStatus) {
     const record = this.getDeployment(deploymentId);
     record.status = status;
     record.lastHeartbeatAt = new Date().toISOString();
+    await this.postgresStateService.upsertDeployment(record);
     return record;
   }
 
-  updateDeployment(deploymentId: string, patch: Partial<DeploymentRecord>) {
+  async updateDeployment(deploymentId: string, patch: Partial<DeploymentRecord>) {
     const record = this.getDeployment(deploymentId);
     Object.assign(record, patch);
     record.lastHeartbeatAt = new Date().toISOString();
+    await this.postgresStateService.upsertDeployment(record);
     return record;
   }
 
@@ -325,13 +373,14 @@ export class StoreService {
     );
   }
 
-  createUsageLedger(input: Omit<UsageLedgerRecord, "id">) {
+  async createUsageLedger(input: Omit<UsageLedgerRecord, "id">) {
     const record: UsageLedgerRecord = {
       id: `ulg_${Date.now()}_${this.usageLedger.length + 1}`,
       ...input,
     };
 
     this.usageLedger.unshift(record);
+    await this.postgresStateService.insertUsageLedger(record);
     return record;
   }
 
@@ -343,7 +392,7 @@ export class StoreService {
       .slice(0, limit);
   }
 
-  createWalletTransaction(
+  async createWalletTransaction(
     workspaceId: string,
     input: Omit<WalletTransactionRecord, "id" | "walletId" | "workspaceId" | "balanceAfterCny">,
   ) {
@@ -359,6 +408,10 @@ export class StoreService {
     };
 
     this.walletTransactions.unshift(record);
+    await Promise.all([
+      this.postgresStateService.upsertWallet(wallet),
+      this.postgresStateService.insertWalletTransaction(record),
+    ]);
     return record;
   }
 
@@ -422,5 +475,16 @@ export class StoreService {
 
   private roundCurrency(value: number) {
     return Math.round(value * 1000000) / 1000000;
+  }
+
+  private mergeById<T extends { id: string }>(base: T[], persisted: T[]) {
+    const merged = new Map<string, T>();
+    for (const item of base) {
+      merged.set(item.id, item);
+    }
+    for (const item of persisted) {
+      merged.set(item.id, item);
+    }
+    return [...merged.values()];
   }
 }

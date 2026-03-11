@@ -22,7 +22,7 @@ export class DeploymentsService {
   async createDeployment(body: CreateDeploymentDto) {
     if (body.mode === "local") {
       return {
-        deployment: this.storeService.createDeployment(body),
+        deployment: await this.storeService.createDeployment(body),
         vendor: null,
       };
     }
@@ -69,7 +69,7 @@ export class DeploymentsService {
       };
     }
 
-    const deployment = this.storeService.createDeployment({
+    const deployment = await this.storeService.createDeployment({
       id: deploymentId,
       workspaceId: body.workspaceId,
       name: body.name,
@@ -151,7 +151,7 @@ export class DeploymentsService {
           };
         }
 
-        this.storeService.updateDeployment(deployment.id, {
+        await this.storeService.updateDeployment(deployment.id, {
           status: "running",
           publicIpAddress: primaryDetail?.publicIpAddress,
           privateIpAddress: primaryDetail?.privateIpAddress,
@@ -171,7 +171,10 @@ export class DeploymentsService {
     };
   }
 
-  updateDeploymentStatus(deploymentId: string, status: "creating" | "running" | "stopped" | "error") {
+  async updateDeploymentStatus(
+    deploymentId: string,
+    status: "creating" | "running" | "stopped" | "error",
+  ) {
     return this.storeService.updateDeploymentStatus(deploymentId, status);
   }
 

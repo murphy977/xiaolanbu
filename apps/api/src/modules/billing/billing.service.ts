@@ -78,7 +78,7 @@ export class BillingService {
         cacheWriteTokens: normalized.cacheWriteTokens,
       });
 
-      const ledger = this.storeService.createUsageLedger({
+      const ledger = await this.storeService.createUsageLedger({
         workspaceId: workspace.id,
         deploymentId: deployment.id,
         gatewayTokenId: deployment.gatewayKey.tokenId,
@@ -107,7 +107,7 @@ export class BillingService {
       });
 
       if (ledger.billableCostCny > 0) {
-        this.storeService.createWalletTransaction(workspace.id, {
+        await this.storeService.createWalletTransaction(workspace.id, {
           type: "usage",
           title: `${deployment.name} · ${ledger.model} 调用`,
           amountCny: -ledger.billableCostCny,
