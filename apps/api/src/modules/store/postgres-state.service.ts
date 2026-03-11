@@ -163,6 +163,14 @@ export class PostgresStateService implements OnModuleDestroy {
     );
   }
 
+  async deleteDeployment(id: string) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(`DELETE FROM xlb_deployments WHERE id = $1`, [id]);
+  }
+
   private async queryRows<T>(sql: string) {
     if (!this.pool) {
       return [];

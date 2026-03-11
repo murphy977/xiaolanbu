@@ -1,12 +1,16 @@
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import Ecs20140526, {
+  DeleteInstanceRequest,
   DescribeCloudAssistantStatusRequest,
   DescribeInstancesRequest,
   DescribeInstanceStatusRequest,
   DescribeInvocationResultsRequest,
+  RebootInstanceRequest,
   RunCommandRequest,
   RunInstancesRequest,
   RunInstancesResponseBody,
+  StartInstanceRequest,
+  StopInstanceRequest,
 } from "@alicloud/ecs20140526";
 import { Config } from "@alicloud/openapi-client";
 import { RuntimeOptions } from "@alicloud/tea-util";
@@ -71,6 +75,11 @@ export interface AliyunRunCommandResult {
   output?: string;
   errorCode?: string;
   errorInfo?: string;
+}
+
+export interface AliyunInstanceActionResult {
+  requestId: string;
+  instanceId: string;
 }
 
 @Injectable()
@@ -376,6 +385,145 @@ export class AliyunEcsService {
       statuses: await this.describeInstanceStatuses(input),
       waitedMs: Date.now() - startedAt,
     };
+  }
+
+  async waitForStatus(
+    input: DescribeAliyunInstanceStatusInput & {
+      expectedStatus: string;
+      timeoutMs?: number;
+      intervalMs?: number;
+    },
+  ) {
+    const timeoutMs = input.timeoutMs ?? 180000;
+    const intervalMs = input.intervalMs ?? 5000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const statuses = await this.describeInstanceStatuses(input);
+      const allMatched =
+        statuses.length > 0 &&
+        input.instanceIds.every((instanceId) =>
+          statuses.some(
+            (item) => item.instanceId === instanceId && item.status === input.expectedStatus,
+          ),
+        );
+
+      if (allMatched) {
+        return {
+          success: true,
+          statuses,
+          waitedMs: Date.now() - startedAt,
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    return {
+      success: false,
+      statuses: await this.describeInstanceStatuses(input),
+      waitedMs: Date.now() - startedAt,
+    };
+  }
+
+  async startInstance(input: { regionId: string; instanceId: string }): Promise<AliyunInstanceActionResult> {
+    const client = this.createClient(input.regionId);
+    const { connectTimeout, readTimeout } = this.getTimeouts();
+    const runtime = new RuntimeOptions({ connectTimeout, readTimeout, autoretry: true, maxAttempts: 3 });
+    const request = new StartInstanceRequest({
+      regionId: input.regionId,
+      instanceId: input.instanceId,
+    });
+
+    try {
+      const response = await client.startInstanceWithOptions(request, runtime);
+      return {
+        requestId: response.body?.requestId ?? "",
+        instanceId: input.instanceId,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Aliyun StartInstance error";
+      throw new InternalServerErrorException(`Aliyun StartInstance failed: ${message}`);
+    }
+  }
+
+  async stopInstance(input: {
+    regionId: string;
+    instanceId: string;
+    forceStop?: boolean;
+  }): Promise<AliyunInstanceActionResult> {
+    const client = this.createClient(input.regionId);
+    const { connectTimeout, readTimeout } = this.getTimeouts();
+    const runtime = new RuntimeOptions({ connectTimeout, readTimeout, autoretry: true, maxAttempts: 3 });
+    const request = new StopInstanceRequest({
+      regionId: input.regionId,
+      instanceId: input.instanceId,
+      forceStop: input.forceStop ?? true,
+      stoppedMode: "StopCharging",
+    });
+
+    try {
+      const response = await client.stopInstanceWithOptions(request, runtime);
+      return {
+        requestId: response.body?.requestId ?? "",
+        instanceId: input.instanceId,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Aliyun StopInstance error";
+      throw new InternalServerErrorException(`Aliyun StopInstance failed: ${message}`);
+    }
+  }
+
+  async rebootInstance(input: {
+    regionId: string;
+    instanceId: string;
+    forceStop?: boolean;
+  }): Promise<AliyunInstanceActionResult> {
+    const client = this.createClient(input.regionId);
+    const { connectTimeout, readTimeout } = this.getTimeouts();
+    const runtime = new RuntimeOptions({ connectTimeout, readTimeout, autoretry: true, maxAttempts: 3 });
+    const request = new RebootInstanceRequest({
+      regionId: input.regionId,
+      instanceId: input.instanceId,
+      forceStop: input.forceStop ?? true,
+    });
+
+    try {
+      const response = await client.rebootInstanceWithOptions(request, runtime);
+      return {
+        requestId: response.body?.requestId ?? "",
+        instanceId: input.instanceId,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Aliyun RebootInstance error";
+      throw new InternalServerErrorException(`Aliyun RebootInstance failed: ${message}`);
+    }
+  }
+
+  async deleteInstance(input: {
+    regionId: string;
+    instanceId: string;
+    force?: boolean;
+  }): Promise<AliyunInstanceActionResult> {
+    const client = this.createClient(input.regionId);
+    const { connectTimeout, readTimeout } = this.getTimeouts();
+    const runtime = new RuntimeOptions({ connectTimeout, readTimeout, autoretry: true, maxAttempts: 3 });
+    const request = new DeleteInstanceRequest({
+      regionId: input.regionId,
+      instanceId: input.instanceId,
+      force: input.force ?? true,
+    });
+
+    try {
+      const response = await client.deleteInstanceWithOptions(request, runtime);
+      return {
+        requestId: response.body?.requestId ?? "",
+        instanceId: input.instanceId,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Aliyun DeleteInstance error";
+      throw new InternalServerErrorException(`Aliyun DeleteInstance failed: ${message}`);
+    }
   }
 
   private async waitForInvocationResult(input: {

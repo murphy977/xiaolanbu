@@ -294,6 +294,17 @@ export class StoreService implements OnModuleInit {
     return record;
   }
 
+  async deleteDeployment(deploymentId: string) {
+    const index = this.deployments.findIndex((item) => item.id === deploymentId);
+    if (index < 0) {
+      throw new NotFoundException(`Deployment ${deploymentId} not found`);
+    }
+
+    const [removed] = this.deployments.splice(index, 1);
+    await this.postgresStateService.deleteDeployment(deploymentId);
+    return removed;
+  }
+
   getDeployment(deploymentId: string) {
     const record = this.deployments.find((item) => item.id === deploymentId);
     if (!record) {

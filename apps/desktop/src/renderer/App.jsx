@@ -718,6 +718,8 @@ function SettingsView({
   createFeedback,
   onOpenExternal,
   onCopyText,
+  actionPendingId,
+  onDeploymentAction,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
 
@@ -925,6 +927,43 @@ function SettingsView({
                     <strong>{deployment.access?.dashboardUrl ?? deployment.consoleUrl ?? "--"}</strong>
                   </div>
                 </div>
+                <div className="result-actions">
+                  <button
+                    className="ghost-button small"
+                    onClick={() => onOpenExternal(deployment.access?.dashboardUrl ?? deployment.consoleUrl)}
+                    disabled={!(deployment.access?.dashboardUrl ?? deployment.consoleUrl)}
+                  >
+                    打开控制台
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => onDeploymentAction(deployment.id, "start")}
+                    disabled={actionPendingId === deployment.id || deployment.status === "running"}
+                  >
+                    启动
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => onDeploymentAction(deployment.id, "stop")}
+                    disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
+                  >
+                    停止
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => onDeploymentAction(deployment.id, "restart")}
+                    disabled={actionPendingId === deployment.id || deployment.status !== "running"}
+                  >
+                    重启
+                  </button>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => onDeploymentAction(deployment.id, "destroy")}
+                    disabled={actionPendingId === deployment.id}
+                  >
+                    销毁
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -975,6 +1014,7 @@ export function App() {
     syncing: false,
     topupPending: false,
     createPending: false,
+    actionPendingId: null,
     error: "",
     createError: "",
     createResult: null,
@@ -1220,6 +1260,43 @@ export function App() {
     }));
   };
 
+  const handleDeploymentAction = async (deploymentId, action) => {
+    const actionMap = {
+      start: { method: "POST", path: `/deployments/${deploymentId}/start`, success: "实例已启动。" },
+      stop: { method: "POST", path: `/deployments/${deploymentId}/stop`, success: "实例已停止。" },
+      restart: { method: "POST", path: `/deployments/${deploymentId}/restart`, success: "实例已重启。" },
+      destroy: { method: "DELETE", path: `/deployments/${deploymentId}`, success: "实例已销毁。" },
+    };
+
+    const config = actionMap[action];
+    if (!config) {
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      actionPendingId: deploymentId,
+      createError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      await fetchJson(config.path, { method: config.method });
+      await refreshWorkspaceData({ withSync: true });
+      setWorkspaceState((current) => ({
+        ...current,
+        actionPendingId: null,
+        createFeedback: config.success,
+      }));
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        actionPendingId: null,
+        createError: error instanceof Error ? error.message : "实例操作失败，请稍后再试。",
+      }));
+    }
+  };
+
   const meta = VIEW_META[currentView];
   const activeDeploymentCount = useMemo(
     () => workspaceState.deployments.filter((item) => item.status === "running").length,
@@ -1302,6 +1379,8 @@ export function App() {
               onCreate={handleCreateDeployment}
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
+              actionPendingId={workspaceState.actionPendingId}
+              onDeploymentAction={handleDeploymentAction}
             />
           ) : null}
         </main>

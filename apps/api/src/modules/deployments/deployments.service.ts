@@ -199,6 +199,139 @@ export class DeploymentsService {
     return this.storeService.updateDeploymentStatus(deploymentId, status);
   }
 
+  async startDeployment(deploymentId: string) {
+    const deployment = this.storeService.getDeployment(deploymentId);
+    if (deployment.mode !== "cloud" || deployment.provider !== "aliyun") {
+      return {
+        deployment: await this.storeService.updateDeploymentStatus(deploymentId, "running"),
+        vendor: null,
+        wait: null,
+      };
+    }
+
+    const instanceId = this.requireVendorInstanceId(deployment);
+    const vendor = await this.aliyunEcsService.startInstance({
+      regionId: deployment.region,
+      instanceId,
+    });
+    const wait = await this.aliyunEcsService.waitForStatus({
+      regionId: deployment.region,
+      instanceIds: [instanceId],
+      expectedStatus: "Running",
+      timeoutMs: 180000,
+    });
+
+    const [detail] = await this.aliyunEcsService.describeInstances({
+      regionId: deployment.region,
+      instanceIds: [instanceId],
+    });
+
+    return {
+      deployment: await this.storeService.updateDeployment(deploymentId, {
+        status: wait.success ? "running" : deployment.status,
+        publicIpAddress: detail?.publicIpAddress,
+        privateIpAddress: detail?.privateIpAddress,
+        zoneId: detail?.zoneId,
+      }),
+      vendor,
+      wait,
+    };
+  }
+
+  async stopDeployment(deploymentId: string) {
+    const deployment = this.storeService.getDeployment(deploymentId);
+    if (deployment.mode !== "cloud" || deployment.provider !== "aliyun") {
+      return {
+        deployment: await this.storeService.updateDeploymentStatus(deploymentId, "stopped"),
+        vendor: null,
+        wait: null,
+      };
+    }
+
+    const instanceId = this.requireVendorInstanceId(deployment);
+    const vendor = await this.aliyunEcsService.stopInstance({
+      regionId: deployment.region,
+      instanceId,
+      forceStop: true,
+    });
+    const wait = await this.aliyunEcsService.waitForStatus({
+      regionId: deployment.region,
+      instanceIds: [instanceId],
+      expectedStatus: "Stopped",
+      timeoutMs: 180000,
+    });
+
+    return {
+      deployment: await this.storeService.updateDeploymentStatus(
+        deploymentId,
+        wait.success ? "stopped" : deployment.status,
+      ),
+      vendor,
+      wait,
+    };
+  }
+
+  async restartDeployment(deploymentId: string) {
+    const deployment = this.storeService.getDeployment(deploymentId);
+    if (deployment.mode !== "cloud" || deployment.provider !== "aliyun") {
+      return {
+        deployment: await this.storeService.updateDeploymentStatus(deploymentId, "running"),
+        vendor: null,
+        wait: null,
+      };
+    }
+
+    const instanceId = this.requireVendorInstanceId(deployment);
+    const vendor = await this.aliyunEcsService.rebootInstance({
+      regionId: deployment.region,
+      instanceId,
+      forceStop: true,
+    });
+    const wait = await this.aliyunEcsService.waitForStatus({
+      regionId: deployment.region,
+      instanceIds: [instanceId],
+      expectedStatus: "Running",
+      timeoutMs: 180000,
+    });
+
+    return {
+      deployment: await this.storeService.updateDeploymentStatus(
+        deploymentId,
+        wait.success ? "running" : deployment.status,
+      ),
+      vendor,
+      wait,
+    };
+  }
+
+  async destroyDeployment(deploymentId: string) {
+    const deployment = this.storeService.getDeployment(deploymentId);
+
+    if (deployment.gatewayKey?.secretKey) {
+      await this.liteLlmProxyService.updateVirtualKey({
+        key: deployment.gatewayKey.secretKey,
+        blocked: true,
+        maxBudget: 0,
+      });
+    }
+
+    let vendor: { requestId: string; instanceId: string } | null = null;
+
+    if (deployment.mode === "cloud" && deployment.provider === "aliyun") {
+      const instanceId = this.requireVendorInstanceId(deployment);
+      vendor = await this.aliyunEcsService.deleteInstance({
+        regionId: deployment.region,
+        instanceId,
+        force: true,
+      });
+    }
+
+    return {
+      deployment: await this.storeService.deleteDeployment(deploymentId),
+      vendor,
+    };
+  }
+
   private assertAliyunCloudInput(body: CreateDeploymentDto) {
     const missing = [
       ["region", body.region],
@@ -215,6 +348,14 @@ export class DeploymentsService {
         `Aliyun cloud deployment is missing required fields: ${missing.join(", ")}`,
       );
     }
+  }
+
+  private requireVendorInstanceId(deployment: { id: string; vendorInstanceIds?: string[] }) {
+    const instanceId = deployment.vendorInstanceIds?.[0];
+    if (!instanceId) {
+      throw new BadRequestException(`Deployment ${deployment.id} is missing vendor instance id.`);
+    }
+    return instanceId;
   }
 
   private resolveInstanceTypeCandidates(body: CreateDeploymentDto) {

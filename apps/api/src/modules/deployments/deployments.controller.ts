@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 
 import { CreateDeploymentDto } from "./dto/create-deployment.dto";
 import { UpdateDeploymentStatusDto } from "./dto/update-deployment-status.dto";
@@ -28,5 +28,25 @@ export class DeploymentsController {
     return {
       deployment: await this.deploymentsService.updateDeploymentStatus(deploymentId, body.status),
     };
+  }
+
+  @Post(":deploymentId/start")
+  async startDeployment(@Param("deploymentId") deploymentId: string) {
+    return this.deploymentsService.startDeployment(deploymentId);
+  }
+
+  @Post(":deploymentId/stop")
+  async stopDeployment(@Param("deploymentId") deploymentId: string) {
+    return this.deploymentsService.stopDeployment(deploymentId);
+  }
+
+  @Post(":deploymentId/restart")
+  async restartDeployment(@Param("deploymentId") deploymentId: string) {
+    return this.deploymentsService.restartDeployment(deploymentId);
+  }
+
+  @Delete(":deploymentId")
+  async destroyDeployment(@Param("deploymentId") deploymentId: string) {
+    return this.deploymentsService.destroyDeployment(deploymentId);
   }
 }
