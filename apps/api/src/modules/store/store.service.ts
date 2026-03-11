@@ -468,6 +468,85 @@ export class StoreService implements OnModuleInit {
     return this.getAuthContextByUserId(input.currentUserId);
   }
 
+  async leaveWorkspace(input: { currentUserId: string; workspaceId: string }) {
+    this.assertUserHasWorkspaceAccess(input.currentUserId, input.workspaceId);
+
+    const membership = this.getWorkspaceMembership(input.currentUserId, input.workspaceId);
+    if (!membership) {
+      throw new NotFoundException("你不在当前工作区中");
+    }
+
+    const nextWorkspace = this.listUserWorkspaces(input.currentUserId).find(
+      (item) => item.id !== input.workspaceId,
+    );
+    if (!nextWorkspace) {
+      throw new BadRequestException("至少保留一个可用工作区后才能退出当前工作区");
+    }
+
+    if (membership.role === "owner") {
+      const ownerCount = this.workspaceMembers.filter(
+        (item) => item.workspaceId === input.workspaceId && item.role === "owner",
+      ).length;
+      if (ownerCount <= 1) {
+        throw new BadRequestException("当前工作区最后一位拥有者不能直接退出，请先转移拥有者或归档工作区");
+      }
+    }
+
+    this.workspaceMembers = this.workspaceMembers.filter((item) => item.id !== membership.id);
+    await this.postgresStateService.deleteWorkspaceMember(membership.userId, membership.workspaceId);
+
+    const currentUser = this.users.find((item) => item.id === input.currentUserId);
+    if (currentUser?.activeWorkspaceId === input.workspaceId) {
+      currentUser.activeWorkspaceId = nextWorkspace.id;
+      await this.postgresStateService.upsertUser(currentUser);
+
+      if (this.currentUser.id === currentUser.id) {
+        this.currentUser = this.toUserRecord(currentUser);
+        await this.postgresStateService.upsertCurrentUser(this.currentUser);
+      }
+    }
+
+    return this.getAuthContextByUserId(input.currentUserId);
+  }
+
+  async archiveWorkspace(input: { currentUserId: string; workspaceId: string }) {
+    this.assertUserCanManageWorkspace(input.currentUserId, input.workspaceId);
+
+    const workspace = this.getWorkspace(input.workspaceId);
+    const nextWorkspace = this.listUserWorkspaces(input.currentUserId).find(
+      (item) => item.id !== input.workspaceId,
+    );
+    if (!nextWorkspace) {
+      throw new BadRequestException("至少保留一个可用工作区后才能归档当前工作区");
+    }
+
+    const deploymentCount = this.deployments.filter((item) => item.workspaceId === input.workspaceId).length;
+    if (deploymentCount > 0) {
+      throw new BadRequestException("请先销毁当前工作区下的全部实例，再归档工作区");
+    }
+
+    const memberCount = this.workspaceMembers.filter((item) => item.workspaceId === input.workspaceId).length;
+    if (memberCount > 1) {
+      throw new BadRequestException("请先移除或让其他成员退出当前工作区，再执行归档");
+    }
+
+    workspace.status = "archived";
+    await this.postgresStateService.upsertWorkspace(workspace);
+
+    const currentUser = this.users.find((item) => item.id === input.currentUserId);
+    if (currentUser?.activeWorkspaceId === input.workspaceId) {
+      currentUser.activeWorkspaceId = nextWorkspace.id;
+      await this.postgresStateService.upsertUser(currentUser);
+
+      if (this.currentUser.id === currentUser.id) {
+        this.currentUser = this.toUserRecord(currentUser);
+        await this.postgresStateService.upsertCurrentUser(this.currentUser);
+      }
+    }
+
+    return this.getAuthContextByUserId(input.currentUserId);
+  }
+
   async loginUser(input: { email: string; password: string }) {
     const email = input.email.trim().toLowerCase();
     const user = this.users.find((item) => item.email.toLowerCase() === email);
@@ -520,7 +599,7 @@ export class StoreService implements OnModuleInit {
     const workspaceIds = new Set(
       this.workspaceMembers.filter((item) => item.userId === userId).map((item) => item.workspaceId),
     );
-    return this.workspaces.filter((item) => workspaceIds.has(item.id));
+    return this.workspaces.filter((item) => workspaceIds.has(item.id) && item.status !== "archived");
   }
 
   listUserWorkspaceViews(userId: string): WorkspaceViewRecord[] {

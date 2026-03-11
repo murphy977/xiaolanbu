@@ -81,6 +81,30 @@ export class WorkspacesController {
     });
   }
 
+  @Post(":workspaceId/leave")
+  async leaveWorkspace(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    return this.storeService.leaveWorkspace({
+      currentUserId: currentUser.id,
+      workspaceId,
+    });
+  }
+
+  @Post(":workspaceId/archive")
+  async archiveWorkspace(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    return this.storeService.archiveWorkspace({
+      currentUserId: currentUser.id,
+      workspaceId,
+    });
+  }
+
   @Get(":workspaceId/members")
   listWorkspaceMembers(
     @Param("workspaceId") workspaceId: string,

@@ -843,10 +843,14 @@ function SettingsView({
   workspaceRenameName,
   workspaceRenamePending,
   workspaceRenameError,
+  workspaceDangerPending,
+  workspaceDangerError,
   onWorkspaceCreateNameChange,
   onWorkspaceCreate,
   onWorkspaceRenameNameChange,
   onWorkspaceRename,
+  onWorkspaceLeave,
+  onWorkspaceArchive,
   memberInviteEmail,
   memberInvitePending,
   memberInviteError,
@@ -1117,6 +1121,28 @@ function SettingsView({
           {workspaceRenameError ? (
             <div className="inline-notice inline-notice--error">{workspaceRenameError}</div>
           ) : null}
+          {workspaceDangerError ? (
+            <div className="inline-notice inline-notice--error">{workspaceDangerError}</div>
+          ) : null}
+          <div className="result-actions">
+            <button
+              className="ghost-button small"
+              onClick={onWorkspaceLeave}
+              disabled={workspaceDangerPending || !activeWorkspace?.id}
+            >
+              {workspaceDangerPending ? "处理中..." : "退出当前工作区"}
+            </button>
+            <button
+              className="ghost-button small danger"
+              onClick={onWorkspaceArchive}
+              disabled={workspaceDangerPending || !activeWorkspace?.id || currentWorkspaceRole !== "owner"}
+            >
+              {workspaceDangerPending ? "处理中..." : "归档当前工作区"}
+            </button>
+          </div>
+          <div className="section-note">
+            成员可以退出当前工作区；拥有者可以在清空实例和成员后归档工作区。
+          </div>
         </article>
 
         <article className="card settings-card">
@@ -1415,6 +1441,7 @@ export function App() {
     topupPending: false,
     workspaceCreatePending: false,
     workspaceRenamePending: false,
+    workspaceDangerPending: false,
     memberInvitePending: false,
     memberActionPendingId: null,
     createPending: false,
@@ -1423,6 +1450,7 @@ export function App() {
     error: "",
     workspaceCreateError: "",
     workspaceRenameError: "",
+    workspaceDangerError: "",
     memberInviteError: "",
     memberActionError: "",
     createError: "",
@@ -1528,6 +1556,7 @@ export function App() {
           error: "",
           workspaceCreateError: "",
           workspaceRenameError: "",
+          workspaceDangerError: "",
           memberInviteError: "",
           memberActionError: "",
         }));
@@ -1571,10 +1600,10 @@ export function App() {
 
     const timer = window.setInterval(() => {
       void refreshWorkspaceData();
-    }, workspaceState.createPending || workspaceState.actionPendingId ? 5000 : 60000);
+    }, workspaceState.createPending || workspaceState.actionPendingId || workspaceState.workspaceDangerPending ? 5000 : 60000);
 
     return () => window.clearInterval(timer);
-  }, [activeWorkspaceId, workspaceState.createPending, workspaceState.actionPendingId]);
+  }, [activeWorkspaceId, workspaceState.createPending, workspaceState.actionPendingId, workspaceState.workspaceDangerPending]);
 
   const handleWorkspaceSwitch = async (workspaceId) => {
     if (!workspaceId || workspaceId === activeWorkspaceId) {
@@ -1615,12 +1644,14 @@ export function App() {
         transactions: [],
         workspaceCreatePending: false,
         workspaceRenamePending: false,
+        workspaceDangerPending: false,
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
         error: "",
         workspaceCreateError: "",
         workspaceRenameError: "",
+        workspaceDangerError: "",
         memberInviteError: "",
         memberActionPendingId: null,
         memberActionError: "",
@@ -1806,6 +1837,7 @@ export function App() {
         ...current,
         topupPending: true,
         error: "",
+        workspaceDangerError: "",
       }));
     });
 
@@ -1856,10 +1888,11 @@ export function App() {
     setWorkspaceState((current) => ({
       ...current,
       workspaceCreatePending: true,
-      workspaceCreateError: "",
-      workspaceRenameError: "",
-      createFeedback: "",
-    }));
+        workspaceCreateError: "",
+        workspaceRenameError: "",
+        workspaceDangerError: "",
+        createFeedback: "",
+      }));
 
     try {
       const result = await fetchJson("/workspaces", {
@@ -1921,10 +1954,11 @@ export function App() {
     setWorkspaceState((current) => ({
       ...current,
       workspaceRenamePending: true,
-      workspaceRenameError: "",
-      workspaceCreateError: "",
-      createFeedback: "",
-    }));
+        workspaceRenameError: "",
+        workspaceCreateError: "",
+        workspaceDangerError: "",
+        createFeedback: "",
+      }));
 
     try {
       const result = await fetchJson(`/workspaces/${activeWorkspaceId}`, {
@@ -1965,6 +1999,116 @@ export function App() {
         ...current,
         workspaceRenamePending: false,
         workspaceRenameError: error instanceof Error ? error.message : "更新工作区名称失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleWorkspaceLeave = async () => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    if (!window.confirm("退出后将切换到其他工作区，是否继续？")) {
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      workspaceDangerPending: true,
+      workspaceDangerError: "",
+      workspaceCreateError: "",
+      workspaceRenameError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}/leave`, {
+        method: "POST",
+      });
+
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? current.user,
+        workspaces: result.workspaces ?? current.workspaces,
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          current.activeWorkspaceId,
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceDangerPending: false,
+        workspaceDangerError: "",
+        createFeedback: "你已退出当前工作区，并切换到新的工作区。",
+      }));
+      await refreshWorkspaceData({
+        workspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          "",
+      });
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceDangerPending: false,
+        workspaceDangerError: error instanceof Error ? error.message : "退出工作区失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleWorkspaceArchive = async () => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    if (!window.confirm("归档后当前工作区将不再出现在列表中，且需要先清空实例和成员。是否继续？")) {
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      workspaceDangerPending: true,
+      workspaceDangerError: "",
+      workspaceCreateError: "",
+      workspaceRenameError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}/archive`, {
+        method: "POST",
+      });
+
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? current.user,
+        workspaces: result.workspaces ?? current.workspaces,
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          current.activeWorkspaceId,
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceDangerPending: false,
+        workspaceDangerError: "",
+        createFeedback: "当前工作区已归档，并已切换到其他工作区。",
+      }));
+      await refreshWorkspaceData({
+        workspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          "",
+      });
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceDangerPending: false,
+        workspaceDangerError: error instanceof Error ? error.message : "归档工作区失败，请稍后再试。",
       }));
     }
   };
@@ -2432,10 +2576,14 @@ export function App() {
               workspaceRenameName={workspaceRenameName}
               workspaceRenamePending={workspaceState.workspaceRenamePending}
               workspaceRenameError={workspaceState.workspaceRenameError}
+              workspaceDangerPending={workspaceState.workspaceDangerPending}
+              workspaceDangerError={workspaceState.workspaceDangerError}
               onWorkspaceCreateNameChange={setWorkspaceCreateName}
               onWorkspaceCreate={handleWorkspaceCreate}
               onWorkspaceRenameNameChange={setWorkspaceRenameName}
               onWorkspaceRename={handleWorkspaceRename}
+              onWorkspaceLeave={handleWorkspaceLeave}
+              onWorkspaceArchive={handleWorkspaceArchive}
               memberInviteEmail={memberInviteEmail}
               memberInvitePending={workspaceState.memberInvitePending}
               memberInviteError={workspaceState.memberInviteError}

@@ -35,7 +35,7 @@ export interface WorkspaceRecord {
   ownerUserId: string;
   name: string;
   planName: string;
-  status: "active" | "trial" | "suspended";
+  status: "active" | "trial" | "suspended" | "archived";
 }
 
 export interface WorkspaceViewRecord extends WorkspaceRecord {
