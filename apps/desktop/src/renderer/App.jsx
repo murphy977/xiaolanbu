@@ -716,12 +716,16 @@ function SettingsView({
   createResult,
   onCreate,
   createFeedback,
+  operationNotice,
   onOpenExternal,
   onCopyText,
   actionPendingId,
   onDeploymentAction,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
+  const activeActionDeployment = actionPendingId
+    ? deployments.find((item) => item.id === actionPendingId)
+    : null;
 
   return (
     <section className="view view--settings is-visible">
@@ -739,6 +743,12 @@ function SettingsView({
             </button>
           </div>
 
+          {operationNotice ? (
+            <div className="inline-notice inline-notice--info">
+              <strong>{operationNotice.title}</strong>
+              <span>{operationNotice.body}</span>
+            </div>
+          ) : null}
           {createError ? <div className="inline-notice inline-notice--error">{createError}</div> : null}
           {createResult ? (
             <div className="inline-notice inline-notice--success">
@@ -816,6 +826,30 @@ function SettingsView({
             </label>
           </div>
 
+          {createPending ? (
+            <div className="create-progress-card">
+              <div className="create-section-title">创建进度</div>
+              <div className="progress-line">
+                <div className="progress-line__item is-active">
+                  <strong>提交资源申请</strong>
+                  <span>正在向阿里云提交实例创建请求。</span>
+                </div>
+                <div className="progress-line__item is-active">
+                  <strong>按规格自动兜底</strong>
+                  <span>{createForm.instanceTypes.filter(Boolean).join(" → ")}</span>
+                </div>
+                <div className="progress-line__item">
+                  <strong>等待实例 Running</strong>
+                  <span>预计需要 20 到 90 秒，期间会自动刷新状态。</span>
+                </div>
+                <div className="progress-line__item">
+                  <strong>启动 OpenClaw 网关</strong>
+                  <span>实例准备好后会自动生成 SSH Tunnel 和控制台地址。</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {createResult?.deployment?.access ? (
             <div className="create-result-card">
               <div className="create-section-title">创建结果</div>
@@ -835,6 +869,18 @@ function SettingsView({
                 <div className="pref-row">
                   <span>Browser Control</span>
                   <strong>{createResult.deployment.access.browserControlUrl ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>最终规格</span>
+                  <strong>{createResult.deployment.metadata?.instanceType ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>等待耗时</span>
+                  <strong>{createResult.wait?.waitedMs ? `${Math.round(createResult.wait.waitedMs / 1000)} 秒` : "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>请求编号</span>
+                  <strong>{createResult.vendor?.requestId ?? "--"}</strong>
                 </div>
               </div>
               <div className="result-actions">
@@ -909,6 +955,11 @@ function SettingsView({
                     {deployment.status}
                   </span>
                 </div>
+                {activeActionDeployment?.id === deployment.id ? (
+                  <div className="deployment-card__status">
+                    正在执行实例操作，界面会自动刷新到最新状态。
+                  </div>
+                ) : null}
                 <div className="deployment-card__rows">
                   <div className="pref-row">
                     <span>模式</span>
@@ -936,32 +987,32 @@ function SettingsView({
                     打开控制台
                   </button>
                   <button
-                    className="ghost-button small"
-                    onClick={() => onDeploymentAction(deployment.id, "start")}
-                    disabled={actionPendingId === deployment.id || deployment.status === "running"}
-                  >
-                    启动
+                      className="ghost-button small"
+                      onClick={() => onDeploymentAction(deployment.id, "start")}
+                      disabled={actionPendingId === deployment.id || deployment.status === "running"}
+                    >
+                    {actionPendingId === deployment.id ? "处理中..." : "启动"}
                   </button>
                   <button
                     className="ghost-button small"
                     onClick={() => onDeploymentAction(deployment.id, "stop")}
                     disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
                   >
-                    停止
+                    {actionPendingId === deployment.id ? "处理中..." : "停止"}
                   </button>
                   <button
                     className="ghost-button small"
                     onClick={() => onDeploymentAction(deployment.id, "restart")}
                     disabled={actionPendingId === deployment.id || deployment.status !== "running"}
                   >
-                    重启
+                    {actionPendingId === deployment.id ? "处理中..." : "重启"}
                   </button>
                   <button
                     className="ghost-button small"
                     onClick={() => onDeploymentAction(deployment.id, "destroy")}
                     disabled={actionPendingId === deployment.id}
                   >
-                    销毁
+                    {actionPendingId === deployment.id ? "处理中..." : "销毁"}
                   </button>
                 </div>
               </div>
@@ -1015,6 +1066,7 @@ export function App() {
     topupPending: false,
     createPending: false,
     actionPendingId: null,
+    actionPendingType: "",
     error: "",
     createError: "",
     createResult: null,
@@ -1075,10 +1127,10 @@ export function App() {
 
     const timer = window.setInterval(() => {
       void refreshWorkspaceData();
-    }, 60000);
+    }, workspaceState.createPending || workspaceState.actionPendingId ? 5000 : 60000);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [workspaceState.createPending, workspaceState.actionPendingId]);
 
   const handleTopup = async (amount) => {
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -1176,7 +1228,7 @@ export function App() {
       return;
     }
 
-    setWorkspaceState((current) => ({
+      setWorkspaceState((current) => ({
         ...current,
         createPending: true,
         createError: "",
@@ -1273,12 +1325,13 @@ export function App() {
       return;
     }
 
-    setWorkspaceState((current) => ({
-      ...current,
-      actionPendingId: deploymentId,
-      createError: "",
-      createFeedback: "",
-    }));
+      setWorkspaceState((current) => ({
+        ...current,
+        actionPendingId: deploymentId,
+        actionPendingType: action,
+        createError: "",
+        createFeedback: "",
+      }));
 
     try {
       await fetchJson(config.path, { method: config.method });
@@ -1286,16 +1339,37 @@ export function App() {
       setWorkspaceState((current) => ({
         ...current,
         actionPendingId: null,
+        actionPendingType: "",
         createFeedback: config.success,
       }));
     } catch (error) {
       setWorkspaceState((current) => ({
         ...current,
         actionPendingId: null,
+        actionPendingType: "",
         createError: error instanceof Error ? error.message : "实例操作失败，请稍后再试。",
       }));
     }
   };
+
+  const operationNotice = workspaceState.createPending
+    ? {
+        title: "正在创建云端实例",
+        body: "系统会按实例规格顺序自动尝试，创建成功后会继续拉起 OpenClaw，并返回可直接使用的 SSH Tunnel 与控制台地址。",
+      }
+    : workspaceState.actionPendingId
+      ? {
+          title: "正在更新实例状态",
+          body: `正在执行${
+            {
+              start: "启动",
+              stop: "停止",
+              restart: "重启",
+              destroy: "销毁",
+            }[workspaceState.actionPendingType] ?? "实例操作"
+          }，页面会以更高频率自动刷新。`,
+        }
+      : null;
 
   const meta = VIEW_META[currentView];
   const activeDeploymentCount = useMemo(
@@ -1376,6 +1450,7 @@ export function App() {
               createError={workspaceState.createError}
               createResult={workspaceState.createResult}
               createFeedback={workspaceState.createFeedback}
+              operationNotice={operationNotice}
               onCreate={handleCreateDeployment}
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
