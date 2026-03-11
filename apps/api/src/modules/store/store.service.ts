@@ -468,6 +468,53 @@ export class StoreService implements OnModuleInit {
     return this.getAuthContextByUserId(input.currentUserId);
   }
 
+  async updateUserProfile(input: { userId: string; displayName: string }) {
+    const user = this.users.find((item) => item.id === input.userId);
+    if (!user) {
+      throw new NotFoundException(`User ${input.userId} not found`);
+    }
+
+    const displayName = input.displayName.trim();
+    if (!displayName) {
+      throw new BadRequestException("请先填写昵称");
+    }
+
+    user.displayName = displayName;
+    user.avatarInitial = displayName.slice(0, 1).toUpperCase();
+    await this.postgresStateService.upsertUser(user);
+
+    if (this.currentUser.id === user.id) {
+      this.currentUser = this.toUserRecord(user);
+      await this.postgresStateService.upsertCurrentUser(this.currentUser);
+    }
+
+    return this.getAuthContextByUserId(input.userId);
+  }
+
+  async updateUserPassword(input: { userId: string; currentPassword: string; newPassword: string }) {
+    const user = this.users.find((item) => item.id === input.userId);
+    if (!user) {
+      throw new NotFoundException(`User ${input.userId} not found`);
+    }
+
+    if (!this.verifyPassword(input.currentPassword, user.passwordHash)) {
+      throw new BadRequestException("当前密码不正确");
+    }
+
+    const nextPassword = input.newPassword.trim();
+    if (nextPassword.length < 8) {
+      throw new BadRequestException("新密码至少需要 8 位");
+    }
+
+    user.passwordHash = this.hashPassword(nextPassword);
+    await this.postgresStateService.upsertUser(user);
+
+    return {
+      ok: true,
+      message: "密码已更新，请用新密码继续登录。",
+    };
+  }
+
   async leaveWorkspace(input: { currentUserId: string; workspaceId: string }) {
     this.assertUserHasWorkspaceAccess(input.currentUserId, input.workspaceId);
 

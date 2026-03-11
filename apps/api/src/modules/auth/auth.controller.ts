@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Headers, Patch, Post, UnauthorizedException } from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
+import { UpdatePasswordDto } from "./dto/update-password.dto";
+import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 @Controller("auth")
 export class AuthController {
@@ -69,5 +71,38 @@ export class AuthController {
         this.storeService.getWorkspaceMembership(authUser.id, user.activeWorkspaceId)?.role ?? null,
       workspaces: workspaceViews,
     };
+  }
+
+  @Patch("profile")
+  async updateProfile(
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: UpdateProfileDto,
+  ) {
+    const authUser = this.storeService.getUserBySessionToken(sessionToken);
+    if (!authUser) {
+      throw new UnauthorizedException("请先登录");
+    }
+
+    return this.storeService.updateUserProfile({
+      userId: authUser.id,
+      displayName: body.displayName,
+    });
+  }
+
+  @Patch("password")
+  async updatePassword(
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: UpdatePasswordDto,
+  ) {
+    const authUser = this.storeService.getUserBySessionToken(sessionToken);
+    if (!authUser) {
+      throw new UnauthorizedException("请先登录");
+    }
+
+    return this.storeService.updateUserPassword({
+      userId: authUser.id,
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
+    });
   }
 }

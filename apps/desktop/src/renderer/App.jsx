@@ -813,6 +813,7 @@ function MembershipView({
 }
 
 function SettingsView({
+  currentUser,
   deployments,
   members,
   currentUserId,
@@ -851,6 +852,16 @@ function SettingsView({
   onWorkspaceRename,
   onWorkspaceLeave,
   onWorkspaceArchive,
+  profileForm,
+  profilePending,
+  profileError,
+  passwordForm,
+  passwordPending,
+  passwordError,
+  onProfileFieldChange,
+  onPasswordFieldChange,
+  onProfileSave,
+  onPasswordSave,
   memberInviteEmail,
   memberInvitePending,
   memberInviteError,
@@ -870,6 +881,68 @@ function SettingsView({
   return (
     <section className="view view--settings is-visible">
       <div className="settings-layout">
+        <article className="card settings-card">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">账号与安全</div>
+              <div className="card-subtitle">更新昵称和登录密码，这些是用户侧最常用的基础设置。</div>
+            </div>
+          </div>
+          <div className="create-grid">
+            <label className="field">
+              <span>当前邮箱</span>
+              <input type="email" value={currentUser?.email ?? ""} disabled />
+            </label>
+            <label className="field">
+              <span>昵称</span>
+              <input
+                type="text"
+                value={profileForm.displayName}
+                onChange={(event) => onProfileFieldChange("displayName", event.target.value)}
+                placeholder="修改你在小懒布里的显示名称"
+              />
+            </label>
+          </div>
+          <div className="result-actions">
+            <button className="primary-button small" onClick={onProfileSave} disabled={profilePending}>
+              {profilePending ? "保存中..." : "保存昵称"}
+            </button>
+          </div>
+          {profileError ? <div className="inline-notice inline-notice--error">{profileError}</div> : null}
+          <div className="create-grid create-grid--triple">
+            <label className="field">
+              <span>当前密码</span>
+              <input
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(event) => onPasswordFieldChange("currentPassword", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>新密码</span>
+              <input
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(event) => onPasswordFieldChange("newPassword", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>确认新密码</span>
+              <input
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(event) => onPasswordFieldChange("confirmPassword", event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="result-actions">
+            <button className="ghost-button small" onClick={onPasswordSave} disabled={passwordPending}>
+              {passwordPending ? "更新中..." : "更新密码"}
+            </button>
+          </div>
+          {passwordError ? <div className="inline-notice inline-notice--error">{passwordError}</div> : null}
+        </article>
+
         <article className="card settings-card settings-card--create">
           <div className="card-heading">
             <div>
@@ -1411,6 +1484,14 @@ function SettingsView({
 export function App() {
   const [currentView, setCurrentView] = useState("home");
   const [topupAmount, setTopupAmount] = useState("50");
+  const [profileForm, setProfileForm] = useState({
+    displayName: "",
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [authState, setAuthState] = useState({
     user: null,
     workspaces: [],
@@ -1442,6 +1523,8 @@ export function App() {
     workspaceCreatePending: false,
     workspaceRenamePending: false,
     workspaceDangerPending: false,
+    profilePending: false,
+    passwordPending: false,
     memberInvitePending: false,
     memberActionPendingId: null,
     createPending: false,
@@ -1451,6 +1534,8 @@ export function App() {
     workspaceCreateError: "",
     workspaceRenameError: "",
     workspaceDangerError: "",
+    profileError: "",
+    passwordError: "",
     memberInviteError: "",
     memberActionError: "",
     createError: "",
@@ -1467,6 +1552,12 @@ export function App() {
   useEffect(() => {
     setWorkspaceRenameName(activeWorkspace?.name ?? "");
   }, [activeWorkspace?.id, activeWorkspace?.name]);
+
+  useEffect(() => {
+    setProfileForm({
+      displayName: authState.user?.displayName ?? "",
+    });
+  }, [authState.user?.displayName]);
 
   const refreshAuthState = async () => {
     const storedToken = getStoredSessionToken();
@@ -1502,6 +1593,13 @@ export function App() {
         password: "",
       },
     });
+    setWorkspaceState((current) => ({
+      ...current,
+      profilePending: false,
+      passwordPending: false,
+      profileError: "",
+      passwordError: "",
+    }));
     return authResult;
   };
 
@@ -1557,6 +1655,8 @@ export function App() {
           workspaceCreateError: "",
           workspaceRenameError: "",
           workspaceDangerError: "",
+          profileError: "",
+          passwordError: "",
           memberInviteError: "",
           memberActionError: "",
         }));
@@ -1624,7 +1724,8 @@ export function App() {
         body: JSON.stringify({ workspaceId }),
       });
 
-      setAuthState({
+      setAuthState((current) => ({
+        ...current,
         user: result.user ?? null,
         workspaces: result.workspaces ?? [],
         activeWorkspaceId:
@@ -1633,7 +1734,7 @@ export function App() {
           result.user?.activeWorkspaceId ??
           workspaceId,
         loading: false,
-      });
+      }));
       setWorkspaceState((current) => ({
         ...current,
         wallet: null,
@@ -1645,6 +1746,8 @@ export function App() {
         workspaceCreatePending: false,
         workspaceRenamePending: false,
         workspaceDangerPending: false,
+        profilePending: false,
+        passwordPending: false,
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
@@ -1652,6 +1755,8 @@ export function App() {
         workspaceCreateError: "",
         workspaceRenameError: "",
         workspaceDangerError: "",
+        profileError: "",
+        passwordError: "",
         memberInviteError: "",
         memberActionPendingId: null,
         memberActionError: "",
@@ -1799,10 +1904,16 @@ export function App() {
       syncing: false,
       workspaceCreatePending: false,
       workspaceRenamePending: false,
+      workspaceDangerPending: false,
+      profilePending: false,
+      passwordPending: false,
       memberActionPendingId: null,
       error: "",
       workspaceCreateError: "",
       workspaceRenameError: "",
+      workspaceDangerError: "",
+      profileError: "",
+      passwordError: "",
       memberInviteError: "",
       memberActionError: "",
       createError: "",
@@ -1810,7 +1921,142 @@ export function App() {
       createDiagnostics: [],
       createFeedback: "",
     }));
+    setProfileForm({ displayName: "" });
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
     setMemberInviteEmail("");
+  };
+
+  const handleProfileFieldChange = (field, value) => {
+    setProfileForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+    setWorkspaceState((current) => ({
+      ...current,
+      profileError: "",
+    }));
+  };
+
+  const handlePasswordFieldChange = (field, value) => {
+    setPasswordForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+    setWorkspaceState((current) => ({
+      ...current,
+      passwordError: "",
+    }));
+  };
+
+  const handleProfileSave = async () => {
+    const displayName = profileForm.displayName.trim();
+    if (!displayName) {
+      setWorkspaceState((current) => ({
+        ...current,
+        profileError: "请先填写昵称。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      profilePending: true,
+      profileError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson("/auth/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ displayName }),
+      });
+
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? current.user,
+        workspaces: result.workspaces ?? current.workspaces,
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          current.activeWorkspaceId,
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        profilePending: false,
+        profileError: "",
+        createFeedback: "昵称已更新。",
+      }));
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        profilePending: false,
+        profileError: error instanceof Error ? error.message : "更新昵称失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handlePasswordSave = async () => {
+    if (!passwordForm.currentPassword.trim() || !passwordForm.newPassword.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        passwordError: "请先填写当前密码和新密码。",
+      }));
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setWorkspaceState((current) => ({
+        ...current,
+        passwordError: "两次输入的新密码不一致。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      passwordPending: true,
+      passwordError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson("/auth/password", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setWorkspaceState((current) => ({
+        ...current,
+        passwordPending: false,
+        passwordError: "",
+        createFeedback: result.message ?? "密码已更新。",
+      }));
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        passwordPending: false,
+        passwordError: error instanceof Error ? error.message : "更新密码失败，请稍后再试。",
+      }));
+    }
   };
 
   const handleTopup = async (amount) => {
@@ -2546,6 +2792,7 @@ export function App() {
           ) : null}
           {currentView === "settings" ? (
             <SettingsView
+              currentUser={authState.user}
               deployments={workspaceState.deployments}
               members={workspaceState.members}
               currentUserId={authState.user?.id ?? ""}
@@ -2584,6 +2831,16 @@ export function App() {
               onWorkspaceRename={handleWorkspaceRename}
               onWorkspaceLeave={handleWorkspaceLeave}
               onWorkspaceArchive={handleWorkspaceArchive}
+              profileForm={profileForm}
+              profilePending={workspaceState.profilePending}
+              profileError={workspaceState.profileError}
+              passwordForm={passwordForm}
+              passwordPending={workspaceState.passwordPending}
+              passwordError={workspaceState.passwordError}
+              onProfileFieldChange={handleProfileFieldChange}
+              onPasswordFieldChange={handlePasswordFieldChange}
+              onProfileSave={handleProfileSave}
+              onPasswordSave={handlePasswordSave}
               memberInviteEmail={memberInviteEmail}
               memberInvitePending={workspaceState.memberInvitePending}
               memberInviteError={workspaceState.memberInviteError}
