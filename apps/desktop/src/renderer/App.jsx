@@ -1417,76 +1417,104 @@ function SettingsView({
             </div>
           </div>
           <div className="deployment-grid">
-            {deployments.map((deployment) => (
-              <div className="deployment-card" key={deployment.id}>
-                <div className="deployment-card__head">
-                  <strong>{deployment.name}</strong>
-                  <span className={`deployment-badge ${deployment.status === "running" ? "is-running" : ""}`}>
-                    {deployment.status}
-                  </span>
-                </div>
-                {activeActionDeployment?.id === deployment.id ? (
-                  <div className="deployment-card__status">
-                    正在执行实例操作，界面会自动刷新到最新状态。
+            {deployments.map((deployment) => {
+              const deploymentPublicIp = deployment.publicIpAddress?.[0] ?? "";
+              const deploymentDashboardUrl = deployment.access?.dashboardUrl ?? deployment.consoleUrl ?? "";
+              const deploymentTunnelCommand = deploymentPublicIp
+                ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
+                : deployment.access?.sshTunnel ?? "";
+
+              return (
+                <div className="deployment-card" key={deployment.id}>
+                  <div className="deployment-card__head">
+                    <strong>{deployment.name}</strong>
+                    <span className={`deployment-badge ${deployment.status === "running" ? "is-running" : ""}`}>
+                      {deployment.status}
+                    </span>
                   </div>
-                ) : null}
-                <div className="deployment-card__rows">
-                  <div className="pref-row">
-                    <span>模式</span>
-                    <strong>{deployment.mode === "cloud" ? "云端托管" : "本地"}</strong>
+                  {activeActionDeployment?.id === deployment.id ? (
+                    <div className="deployment-card__status">
+                      正在执行实例操作，界面会自动刷新到最新状态。
+                    </div>
+                  ) : null}
+                  {deployment.mode === "cloud" && deployment.status === "running" ? (
+                    <div className="deployment-inline-guide">
+                      <div className="deployment-inline-guide__item">先开 Tunnel</div>
+                      <div className="deployment-inline-guide__item">再开控制台</div>
+                    </div>
+                  ) : null}
+                  <div className="deployment-card__rows">
+                    <div className="pref-row">
+                      <span>模式</span>
+                      <strong>{deployment.mode === "cloud" ? "云端托管" : "本地"}</strong>
+                    </div>
+                    <div className="pref-row">
+                      <span>地域</span>
+                      <strong>{deployment.region ?? "--"}</strong>
+                    </div>
+                    <div className="pref-row">
+                      <span>公网 IP</span>
+                      <strong>{deploymentPublicIp || "--"}</strong>
+                    </div>
+                    <div className="pref-row">
+                      <span>控制入口</span>
+                      <strong>{deploymentDashboardUrl || "--"}</strong>
+                    </div>
                   </div>
-                  <div className="pref-row">
-                    <span>地域</span>
-                    <strong>{deployment.region ?? "--"}</strong>
-                  </div>
-                  <div className="pref-row">
-                    <span>公网 IP</span>
-                    <strong>{deployment.publicIpAddress?.[0] ?? "--"}</strong>
-                  </div>
-                  <div className="pref-row">
-                    <span>控制入口</span>
-                    <strong>{deployment.access?.dashboardUrl ?? deployment.consoleUrl ?? "--"}</strong>
-                  </div>
-                </div>
-                <div className="result-actions">
-                  <button
-                    className="ghost-button small"
-                    onClick={() => onOpenExternal(deployment.access?.dashboardUrl ?? deployment.consoleUrl)}
-                    disabled={!(deployment.access?.dashboardUrl ?? deployment.consoleUrl)}
-                  >
-                    打开控制台
-                  </button>
-                  <button
+                  <div className="result-actions">
+                    <button
+                      className="primary-button small"
+                      onClick={() => onLaunchTunnel(deploymentTunnelCommand)}
+                      disabled={!deploymentTunnelCommand}
+                    >
+                      打开 Tunnel
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onOpenExternal(deploymentDashboardUrl)}
+                      disabled={!deploymentDashboardUrl}
+                    >
+                      打开控制台
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onCopyText(deploymentTunnelCommand, "Tunnel 命令已复制")}
+                      disabled={!deploymentTunnelCommand}
+                    >
+                      复制 Tunnel
+                    </button>
+                    <button
                       className="ghost-button small"
                       onClick={() => onDeploymentAction(deployment.id, "start")}
                       disabled={actionPendingId === deployment.id || deployment.status === "running"}
                     >
-                    {actionPendingId === deployment.id ? "处理中..." : "启动"}
-                  </button>
-                  <button
-                    className="ghost-button small"
-                    onClick={() => onDeploymentAction(deployment.id, "stop")}
-                    disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
-                  >
-                    {actionPendingId === deployment.id ? "处理中..." : "停止"}
-                  </button>
-                  <button
-                    className="ghost-button small"
-                    onClick={() => onDeploymentAction(deployment.id, "restart")}
-                    disabled={actionPendingId === deployment.id || deployment.status !== "running"}
-                  >
-                    {actionPendingId === deployment.id ? "处理中..." : "重启"}
-                  </button>
-                  <button
-                    className="ghost-button small"
-                    onClick={() => onDeploymentAction(deployment.id, "destroy")}
-                    disabled={actionPendingId === deployment.id}
-                  >
-                    {actionPendingId === deployment.id ? "处理中..." : "销毁"}
-                  </button>
+                      {actionPendingId === deployment.id ? "处理中..." : "启动"}
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onDeploymentAction(deployment.id, "stop")}
+                      disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
+                    >
+                      {actionPendingId === deployment.id ? "处理中..." : "停止"}
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onDeploymentAction(deployment.id, "restart")}
+                      disabled={actionPendingId === deployment.id || deployment.status !== "running"}
+                    >
+                      {actionPendingId === deployment.id ? "处理中..." : "重启"}
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onDeploymentAction(deployment.id, "destroy")}
+                      disabled={actionPendingId === deployment.id}
+                    >
+                      {actionPendingId === deployment.id ? "处理中..." : "销毁"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </article>
       </div>
