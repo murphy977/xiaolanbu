@@ -6,9 +6,11 @@ import {
   DeploymentGatewayKeyRecord,
   DeploymentRecord,
   DeploymentStatus,
+  UsageLedgerRecord,
   UsageSummaryRecord,
   UserRecord,
   WalletRecord,
+  WalletTransactionRecord,
   WorkspaceRecord,
 } from "./models";
 
@@ -151,6 +153,23 @@ export class StoreService {
     },
   ];
 
+  private readonly usageLedger: UsageLedgerRecord[] = [];
+
+  private readonly walletTransactions: WalletTransactionRecord[] = [
+    {
+      id: "txn_001",
+      walletId: "wallet_main",
+      workspaceId: "ws_main",
+      type: "topup",
+      title: "余额充值",
+      amountCny: 200,
+      balanceAfterCny: 286.4,
+      createdAt: "2026-03-08T18:20:00.000Z",
+      referenceType: "topup",
+      referenceId: "topup_001",
+    },
+  ];
+
   getCurrentUser() {
     return this.currentUser;
   }
@@ -245,6 +264,10 @@ export class StoreService {
 
   getUsageSummary(workspaceId: string, period: "today" | "7d" | "30d") {
     this.getWorkspace(workspaceId);
+    const dynamicSummary = this.buildUsageSummaryFromLedger(workspaceId, period);
+    if (dynamicSummary) {
+      return dynamicSummary;
+    }
     const summary =
       this.usageSummaries.find((item) => item.workspaceId === workspaceId && item.period === period) ??
       this.usageSummaries.find((item) => item.workspaceId === workspaceId && item.period === "today");
@@ -256,6 +279,148 @@ export class StoreService {
 
   listBillingFeed(workspaceId: string) {
     this.getWorkspace(workspaceId);
-    return this.billingFeed.filter((item) => item.workspaceId === workspaceId);
+    const transactionFeed = this.walletTransactions
+      .filter((item) => item.workspaceId === workspaceId)
+      .map<BillingFeedRecord>((item) => ({
+        id: item.id,
+        workspaceId: item.workspaceId,
+        kind:
+          item.type === "topup" ? "topup" : item.type === "usage" ? "usage" : "adjustment",
+        title: item.title,
+        amountCny: item.amountCny,
+        createdAt: item.createdAt,
+      }));
+
+    return [...this.billingFeed.filter((item) => item.workspaceId === workspaceId), ...transactionFeed].sort(
+      (left, right) => right.createdAt.localeCompare(left.createdAt),
+    );
+  }
+
+  listUsageLedger(
+    workspaceId: string,
+    input?: {
+      deploymentId?: string;
+      limit?: number;
+    },
+  ) {
+    this.getWorkspace(workspaceId);
+    const items = this.usageLedger
+      .filter((item) => item.workspaceId === workspaceId)
+      .filter((item) => (input?.deploymentId ? item.deploymentId === input.deploymentId : true))
+      .sort((left, right) => right.finishedAt.localeCompare(left.finishedAt));
+
+    if (typeof input?.limit === "number" && input.limit > 0) {
+      return items.slice(0, input.limit);
+    }
+
+    return items;
+  }
+
+  findUsageLedger(workspaceId: string, deploymentId: string, requestId: string) {
+    return this.usageLedger.find(
+      (item) =>
+        item.workspaceId === workspaceId &&
+        item.deploymentId === deploymentId &&
+        item.requestId === requestId,
+    );
+  }
+
+  createUsageLedger(input: Omit<UsageLedgerRecord, "id">) {
+    const record: UsageLedgerRecord = {
+      id: `ulg_${Date.now()}_${this.usageLedger.length + 1}`,
+      ...input,
+    };
+
+    this.usageLedger.unshift(record);
+    return record;
+  }
+
+  listWalletTransactions(workspaceId: string, limit = 50) {
+    this.getWorkspace(workspaceId);
+    return this.walletTransactions
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit);
+  }
+
+  createWalletTransaction(
+    workspaceId: string,
+    input: Omit<WalletTransactionRecord, "id" | "walletId" | "workspaceId" | "balanceAfterCny">,
+  ) {
+    const wallet = this.getWallet(workspaceId);
+    wallet.balanceCny = this.roundCurrency(wallet.balanceCny + input.amountCny);
+
+    const record: WalletTransactionRecord = {
+      id: `wtx_${Date.now()}_${this.walletTransactions.length + 1}`,
+      walletId: wallet.id,
+      workspaceId,
+      balanceAfterCny: wallet.balanceCny,
+      ...input,
+    };
+
+    this.walletTransactions.unshift(record);
+    return record;
+  }
+
+  findDeploymentByGatewayTokenId(workspaceId: string, tokenId: string) {
+    return this.deployments.find(
+      (item) => item.workspaceId === workspaceId && item.gatewayKey?.tokenId === tokenId,
+    );
+  }
+
+  private buildUsageSummaryFromLedger(
+    workspaceId: string,
+    period: "today" | "7d" | "30d",
+  ): UsageSummaryRecord | null {
+    const now = Date.now();
+    const periodStart =
+      period === "today"
+        ? now - 24 * 60 * 60 * 1000
+        : period === "7d"
+          ? now - 7 * 24 * 60 * 60 * 1000
+          : now - 30 * 24 * 60 * 60 * 1000;
+
+    const items = this.usageLedger.filter((item) => {
+      if (item.workspaceId !== workspaceId) {
+        return false;
+      }
+      const finishedAt = Date.parse(item.finishedAt);
+      return Number.isFinite(finishedAt) && finishedAt >= periodStart;
+    });
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    const topModelsMap = new Map<string, { tokens: number; costCny: number }>();
+
+    for (const item of items) {
+      const entry = topModelsMap.get(item.model) ?? { tokens: 0, costCny: 0 };
+      entry.tokens += item.totalTokens;
+      entry.costCny = this.roundCurrency(entry.costCny + item.billableCostCny);
+      topModelsMap.set(item.model, entry);
+    }
+
+    const topModels = [...topModelsMap.entries()]
+      .map(([model, value]) => ({
+        model,
+        tokens: value.tokens,
+        costCny: value.costCny,
+      }))
+      .sort((left, right) => right.costCny - left.costCny)
+      .slice(0, 5);
+
+    return {
+      workspaceId,
+      period,
+      requestCount: items.length,
+      totalTokens: items.reduce((sum, item) => sum + item.totalTokens, 0),
+      totalCostCny: this.roundCurrency(items.reduce((sum, item) => sum + item.billableCostCny, 0)),
+      topModels,
+    };
+  }
+
+  private roundCurrency(value: number) {
+    return Math.round(value * 1000000) / 1000000;
   }
 }

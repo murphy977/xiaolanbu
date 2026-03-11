@@ -80,6 +80,7 @@ export class DeploymentsService {
       gatewayKey: gatewayProvision
         ? {
             tokenId: gatewayProvision.tokenId,
+            secretKey: gatewayProvision.apiKey,
             keyName: gatewayProvision.keyName,
             keyAlias: gatewayProvision.keyAlias,
             modelId: gatewayProvision.modelId,

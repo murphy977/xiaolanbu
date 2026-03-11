@@ -25,6 +25,7 @@ export interface DeploymentAccessRecord {
 
 export interface DeploymentGatewayKeyRecord {
   tokenId: string;
+  secretKey?: string;
   keyName?: string;
   keyAlias?: string | null;
   modelId: string;
@@ -59,6 +60,59 @@ export interface WalletRecord {
   balanceCny: number;
   frozenCny: number;
   currency: "CNY";
+}
+
+export interface PriceSnapshotRecord {
+  provider: string;
+  model: string;
+  pricingVersion: string;
+  inputTier: "0-128k" | "128k-256k" | "256k-1m" | "unknown";
+  inputPricePerMillionCny: number;
+  cachedInputPricePerMillionCny: number;
+  cacheWritePricePerMillionCny: number;
+  outputPricePerMillionCny: number;
+  markupMultiplier: number;
+}
+
+export interface UsageLedgerRecord {
+  id: string;
+  workspaceId: string;
+  deploymentId: string;
+  gatewayTokenId?: string;
+  requestId: string;
+  provider: string;
+  model: string;
+  status: "success" | "error";
+  startedAt: string;
+  finishedAt: string;
+  requestDurationMs?: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  upstreamCostCny: number;
+  billableCostCny: number;
+  rawSpendCny?: number;
+  currency: "CNY";
+  source: "litellm";
+  priceSnapshot: PriceSnapshotRecord;
+  metadata?: Record<string, unknown>;
+}
+
+export interface WalletTransactionRecord {
+  id: string;
+  walletId: string;
+  workspaceId: string;
+  type: "topup" | "usage" | "refund" | "adjustment";
+  title: string;
+  amountCny: number;
+  balanceAfterCny: number;
+  createdAt: string;
+  referenceType?: "usage_ledger" | "manual" | "topup";
+  referenceId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface UsageSummaryRecord {
