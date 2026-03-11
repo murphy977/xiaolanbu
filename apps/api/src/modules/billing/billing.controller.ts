@@ -1,7 +1,11 @@
-import { Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 
 import { BillingService } from "./billing.service";
 import { StoreService } from "../store/store.service";
+import {
+  CreateWalletAdjustmentDto,
+  CreateWalletTopupDto,
+} from "./dto/create-wallet-transaction.dto";
 
 @Controller("billing")
 export class BillingController {
@@ -89,7 +93,36 @@ export class BillingController {
       limit:
         typeof parsedLimit === "number" && Number.isFinite(parsedLimit) && parsedLimit > 0
           ? parsedLimit
-          : 100,
+      : 100,
     });
+  }
+
+  @Post("workspaces/:workspaceId/topups")
+  async createWalletTopup(
+    @Param("workspaceId") workspaceId: string,
+    @Body() body: CreateWalletTopupDto,
+  ) {
+    return this.billingService.createWalletTopup({
+      workspaceId,
+      amountCny: body.amountCny,
+      title: body.title,
+    });
+  }
+
+  @Post("workspaces/:workspaceId/adjustments")
+  async createWalletAdjustment(
+    @Param("workspaceId") workspaceId: string,
+    @Body() body: CreateWalletAdjustmentDto,
+  ) {
+    return this.billingService.createWalletAdjustment({
+      workspaceId,
+      amountCny: body.amountCny,
+      title: body.title,
+    });
+  }
+
+  @Post("workspaces/:workspaceId/reconcile")
+  async reconcileWorkspaceGatewayBudgets(@Param("workspaceId") workspaceId: string) {
+    return this.billingService.reconcileWorkspaceGatewayBudgets(workspaceId);
   }
 }

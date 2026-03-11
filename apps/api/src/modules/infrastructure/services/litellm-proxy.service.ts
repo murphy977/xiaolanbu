@@ -10,6 +10,19 @@ export interface LiteLlmVirtualKeyResult {
   maxBudget?: number | null;
 }
 
+export interface LiteLlmVirtualKeyInfoResult {
+  key: string;
+  info: {
+    spend?: number;
+    max_budget?: number | null;
+    blocked?: boolean | null;
+    key_alias?: string | null;
+    key_name?: string;
+    metadata?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
+
 export interface LiteLlmSpendLogRecord {
   request_id?: string;
   api_key?: string;
@@ -134,6 +147,81 @@ export class LiteLlmProxyService {
     }
 
     return [];
+  }
+
+  async getVirtualKeyInfo(key: string): Promise<LiteLlmVirtualKeyInfoResult> {
+    const baseUrl = this.getProxyBaseUrl();
+    const masterKey = process.env.LITELLM_MASTER_KEY;
+
+    if (!baseUrl || !masterKey) {
+      throw new InternalServerErrorException(
+        "LiteLLM proxy is not configured. Set LITELLM_PROXY_URL and LITELLM_MASTER_KEY.",
+      );
+    }
+
+    const response = await fetch(
+      `${baseUrl}/key/info?key=${encodeURIComponent(key)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${masterKey}`,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new InternalServerErrorException(
+        `LiteLLM key info request failed: ${response.status} ${errorBody}`,
+      );
+    }
+
+    return (await response.json()) as LiteLlmVirtualKeyInfoResult;
+  }
+
+  async updateVirtualKey(input: {
+    key: string;
+    maxBudget?: number;
+    blocked?: boolean;
+  }) {
+    const baseUrl = this.getProxyBaseUrl();
+    const masterKey = process.env.LITELLM_MASTER_KEY;
+
+    if (!baseUrl || !masterKey) {
+      throw new InternalServerErrorException(
+        "LiteLLM proxy is not configured. Set LITELLM_PROXY_URL and LITELLM_MASTER_KEY.",
+      );
+    }
+
+    const payload: Record<string, unknown> = {
+      key: input.key,
+    };
+
+    if (typeof input.maxBudget === "number" && Number.isFinite(input.maxBudget)) {
+      payload.max_budget = input.maxBudget;
+    }
+
+    if (typeof input.blocked === "boolean") {
+      payload.blocked = input.blocked;
+    }
+
+    const response = await fetch(`${baseUrl}/key/update`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${masterKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new InternalServerErrorException(
+        `LiteLLM key update failed: ${response.status} ${errorBody}`,
+      );
+    }
+
+    return (await response.json()) as Record<string, unknown>;
   }
 
   getProxyBaseUrl() {

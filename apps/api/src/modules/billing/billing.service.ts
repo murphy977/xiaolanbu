@@ -126,6 +126,8 @@ export class BillingService {
       createdItems.push(ledger);
     }
 
+    await this.reconcileWorkspaceGatewayBudgets(workspace.id);
+
     return {
       workspace,
       synced,
@@ -148,6 +150,91 @@ export class BillingService {
     period: "today" | "7d" | "30d" = "today",
   ) {
     return this.storeService.listDeploymentUsageSummaries(workspaceId, period);
+  }
+
+  async createWalletTopup(input: { workspaceId: string; amountCny: number; title?: string }) {
+    const record = await this.storeService.createWalletTransaction(input.workspaceId, {
+      type: "topup",
+      title: input.title?.trim() || "余额充值",
+      amountCny: input.amountCny,
+      createdAt: new Date().toISOString(),
+      referenceType: "topup",
+      referenceId: `topup_${Date.now()}`,
+    });
+
+    await this.reconcileWorkspaceGatewayBudgets(input.workspaceId);
+    return {
+      wallet: this.storeService.getWallet(input.workspaceId),
+      transaction: record,
+    };
+  }
+
+  async createWalletAdjustment(input: { workspaceId: string; amountCny: number; title?: string }) {
+    const record = await this.storeService.createWalletTransaction(input.workspaceId, {
+      type: "adjustment",
+      title: input.title?.trim() || "余额调整",
+      amountCny: input.amountCny,
+      createdAt: new Date().toISOString(),
+      referenceType: "manual",
+      referenceId: `adjustment_${Date.now()}`,
+    });
+
+    await this.reconcileWorkspaceGatewayBudgets(input.workspaceId);
+    return {
+      wallet: this.storeService.getWallet(input.workspaceId),
+      transaction: record,
+    };
+  }
+
+  async reconcileWorkspaceGatewayBudgets(workspaceId: string) {
+    const wallet = this.storeService.getWallet(workspaceId);
+    const deployments = this.storeService
+      .listDeployments(workspaceId)
+      .filter((item) => item.gatewayKey?.secretKey);
+
+    const results = [];
+
+    for (const deployment of deployments) {
+      const key = deployment.gatewayKey?.secretKey;
+      if (!key) {
+        continue;
+      }
+
+      try {
+        const info = await this.liteLlmProxyService.getVirtualKeyInfo(key);
+        const currentSpend = this.asNumber(info.info.spend) ?? 0;
+        const remainingBalance = Math.max(wallet.balanceCny, 0);
+        const targetBudget = this.roundCurrency(currentSpend + remainingBalance);
+        const shouldBlock = wallet.balanceCny <= 0;
+
+        await this.liteLlmProxyService.updateVirtualKey({
+          key,
+          maxBudget: targetBudget,
+          blocked: shouldBlock,
+        });
+
+        results.push({
+          deploymentId: deployment.id,
+          deploymentName: deployment.name,
+          keyAlias: deployment.gatewayKey?.keyAlias ?? null,
+          spendCny: currentSpend,
+          maxBudgetCny: targetBudget,
+          blocked: shouldBlock,
+        });
+      } catch (error) {
+        results.push({
+          deploymentId: deployment.id,
+          deploymentName: deployment.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return {
+      workspaceId,
+      walletBalanceCny: wallet.balanceCny,
+      items: results,
+    };
   }
 
   private resolveTokenIds(log: LiteLlmSpendLogRecord) {

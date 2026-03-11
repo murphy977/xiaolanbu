@@ -414,9 +414,11 @@ export class DeploymentsService {
 
     const modelId = input.requestedModelId ?? process.env.XLB_GATEWAY_MODEL ?? "qwen35-plus";
     const keyAlias = `deployment:${input.deploymentId}`;
+    const wallet = this.storeService.getWallet(input.workspaceId);
+    const initialBudget = this.resolveInitialGatewayKeyBudget(wallet.balanceCny);
     const generated = await this.liteLlmProxyService.generateVirtualKey({
       models: [modelId],
-      maxBudget: this.resolveGatewayKeyBudget(),
+      maxBudget: initialBudget,
       keyAlias,
       metadata: {
         workspace_id: input.workspaceId,
@@ -424,6 +426,14 @@ export class DeploymentsService {
         deployment_name: input.deploymentName,
       },
     });
+
+    if (wallet.balanceCny <= 0) {
+      await this.liteLlmProxyService.updateVirtualKey({
+        key: generated.key,
+        maxBudget: initialBudget ?? 0,
+        blocked: true,
+      });
+    }
 
     return {
       apiKey: generated.key,
@@ -444,5 +454,18 @@ export class DeploymentsService {
 
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+
+  private resolveInitialGatewayKeyBudget(balanceCny: number) {
+    const positiveBalance = Number.isFinite(balanceCny) ? Math.max(balanceCny, 0) : 0;
+    if (positiveBalance > 0) {
+      return this.roundCurrency(positiveBalance);
+    }
+
+    return this.resolveGatewayKeyBudget() ?? 0;
+  }
+
+  private roundCurrency(value: number) {
+    return Math.round(value * 1000000) / 1000000;
   }
 }
