@@ -815,6 +815,7 @@ function MembershipView({
 function SettingsView({
   deployments,
   members,
+  currentUserId,
   wallet,
   syncing,
   onRefresh,
@@ -839,8 +840,12 @@ function SettingsView({
   memberInviteEmail,
   memberInvitePending,
   memberInviteError,
+  memberActionPendingId,
+  memberActionError,
   onMemberInviteEmailChange,
   onMemberInvite,
+  onMemberRoleChange,
+  onMemberRemove,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
   const activeActionDeployment = actionPendingId
@@ -1118,6 +1123,39 @@ function SettingsView({
                     {member.user.email} · 加入于 {formatDateTime(member.createdAt)}
                   </div>
                 </div>
+                {currentWorkspaceRole === "owner" && member.id !== "empty" ? (
+                  <div className="member-item__actions">
+                    {member.userId === currentUserId ? (
+                      <span className="section-note">当前登录账号</span>
+                    ) : (
+                      <>
+                        <button
+                          className="ghost-button small"
+                          onClick={() =>
+                            onMemberRoleChange(
+                              member.id,
+                              member.role === "owner" ? "member" : "owner",
+                            )
+                          }
+                          disabled={memberActionPendingId === member.id}
+                        >
+                          {memberActionPendingId === member.id
+                            ? "处理中..."
+                            : member.role === "owner"
+                              ? "设为成员"
+                              : "设为拥有者"}
+                        </button>
+                        <button
+                          className="ghost-button small danger"
+                          onClick={() => onMemberRemove(member.id)}
+                          disabled={memberActionPendingId === member.id}
+                        >
+                          {memberActionPendingId === member.id ? "处理中..." : "移除"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -1143,6 +1181,9 @@ function SettingsView({
               </div>
               {memberInviteError ? (
                 <div className="inline-notice inline-notice--error">{memberInviteError}</div>
+              ) : null}
+              {memberActionError ? (
+                <div className="inline-notice inline-notice--error">{memberActionError}</div>
               ) : null}
             </div>
           ) : (
@@ -1310,11 +1351,13 @@ export function App() {
     syncing: false,
     topupPending: false,
     memberInvitePending: false,
+    memberActionPendingId: null,
     createPending: false,
     actionPendingId: null,
     actionPendingType: "",
     error: "",
     memberInviteError: "",
+    memberActionError: "",
     createError: "",
     createResult: null,
     createDiagnostics: [],
@@ -1410,8 +1453,10 @@ export function App() {
           members: membersResult.items ?? [],
           loading: false,
           syncing: false,
+          memberActionPendingId: null,
           error: "",
           memberInviteError: "",
+          memberActionError: "",
         }));
       });
     } catch (error) {
@@ -1500,6 +1545,8 @@ export function App() {
         createFeedback: "",
         error: "",
         memberInviteError: "",
+        memberActionPendingId: null,
+        memberActionError: "",
         createError: "",
       }));
       setMemberInviteEmail("");
@@ -1642,8 +1689,10 @@ export function App() {
       transactions: [],
       loading: false,
       syncing: false,
+      memberActionPendingId: null,
       error: "",
       memberInviteError: "",
+      memberActionError: "",
       createError: "",
       createResult: null,
       createDiagnostics: [],
@@ -1912,6 +1961,7 @@ export function App() {
       ...current,
       memberInvitePending: true,
       memberInviteError: "",
+      memberActionError: "",
       createFeedback: "",
     }));
 
@@ -1939,6 +1989,77 @@ export function App() {
         ...current,
         memberInvitePending: false,
         memberInviteError: error instanceof Error ? error.message : "邀请成员失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleMemberRoleChange = async (memberId, role) => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      memberActionPendingId: memberId,
+      memberActionError: "",
+      memberInviteError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}/members/${memberId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role }),
+      });
+
+      setWorkspaceState((current) => ({
+        ...current,
+        memberActionPendingId: null,
+        members: result.items ?? current.members,
+        createFeedback: role === "owner" ? "成员已提升为拥有者。" : "拥有者已调整为成员。",
+      }));
+      await refreshAuthState();
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        memberActionPendingId: null,
+        memberActionError: error instanceof Error ? error.message : "成员角色更新失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleMemberRemove = async (memberId) => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      memberActionPendingId: memberId,
+      memberActionError: "",
+      memberInviteError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}/members/${memberId}`, {
+        method: "DELETE",
+      });
+
+      setWorkspaceState((current) => ({
+        ...current,
+        memberActionPendingId: null,
+        members: result.items ?? current.members,
+        createFeedback: "成员已移出当前工作区。",
+      }));
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        memberActionPendingId: null,
+        memberActionError: error instanceof Error ? error.message : "移除成员失败，请稍后再试。",
       }));
     }
   };
@@ -2077,6 +2198,7 @@ export function App() {
             <SettingsView
               deployments={workspaceState.deployments}
               members={workspaceState.members}
+              currentUserId={authState.user?.id ?? ""}
               wallet={workspaceState.wallet}
               syncing={workspaceState.syncing}
               onRefresh={() => refreshWorkspaceData({ withSync: true })}
@@ -2101,8 +2223,12 @@ export function App() {
               memberInviteEmail={memberInviteEmail}
               memberInvitePending={workspaceState.memberInvitePending}
               memberInviteError={workspaceState.memberInviteError}
+              memberActionPendingId={workspaceState.memberActionPendingId}
+              memberActionError={workspaceState.memberActionError}
               onMemberInviteEmailChange={setMemberInviteEmail}
               onMemberInvite={handleMemberInvite}
+              onMemberRoleChange={handleMemberRoleChange}
+              onMemberRemove={handleMemberRemove}
             />
           ) : null}
         </main>

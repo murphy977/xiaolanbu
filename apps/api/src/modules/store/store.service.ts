@@ -1,4 +1,11 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from "@nestjs/common";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 import {
@@ -610,6 +617,100 @@ export class StoreService implements OnModuleInit {
     await this.postgresStateService.upsertWorkspaceMember(membership);
 
     return this.listWorkspaceMembers(input.workspaceId);
+  }
+
+  async updateWorkspaceMemberRole(input: {
+    currentUserId: string;
+    workspaceId: string;
+    memberId: string;
+    role: "owner" | "member";
+  }) {
+    this.assertUserCanManageWorkspace(input.currentUserId, input.workspaceId);
+
+    const membership = this.workspaceMembers.find(
+      (item) => item.id === input.memberId && item.workspaceId === input.workspaceId,
+    );
+    if (!membership) {
+      throw new NotFoundException("该成员不存在");
+    }
+
+    if (membership.role === input.role) {
+      return this.listWorkspaceMembers(input.workspaceId);
+    }
+
+    if (membership.role === "owner" && input.role !== "owner") {
+      const ownerCount = this.workspaceMembers.filter(
+        (item) => item.workspaceId === input.workspaceId && item.role === "owner",
+      ).length;
+      if (ownerCount <= 1) {
+        throw new BadRequestException("当前工作区至少要保留一位拥有者");
+      }
+    }
+
+    membership.role = input.role;
+    await this.postgresStateService.upsertWorkspaceMember(membership);
+
+    if (input.role !== "owner") {
+      await this.reassignWorkspaceOwnerIfNeeded(input.workspaceId, membership.userId);
+    }
+
+    return this.listWorkspaceMembers(input.workspaceId);
+  }
+
+  async removeWorkspaceMember(input: {
+    currentUserId: string;
+    workspaceId: string;
+    memberId: string;
+  }) {
+    this.assertUserCanManageWorkspace(input.currentUserId, input.workspaceId);
+
+    const membershipIndex = this.workspaceMembers.findIndex(
+      (item) => item.id === input.memberId && item.workspaceId === input.workspaceId,
+    );
+    if (membershipIndex === -1) {
+      throw new NotFoundException("该成员不存在");
+    }
+
+    const membership = this.workspaceMembers[membershipIndex];
+    const ownerCount = this.workspaceMembers.filter(
+      (item) => item.workspaceId === input.workspaceId && item.role === "owner",
+    ).length;
+    if (membership.role === "owner" && ownerCount <= 1) {
+      throw new BadRequestException("当前工作区至少要保留一位拥有者");
+    }
+
+    this.workspaceMembers.splice(membershipIndex, 1);
+    await this.postgresStateService.deleteWorkspaceMember(membership.userId, membership.workspaceId);
+    await this.reassignWorkspaceOwnerIfNeeded(input.workspaceId, membership.userId);
+
+    const targetUser = this.users.find((item) => item.id === membership.userId);
+    if (targetUser && targetUser.activeWorkspaceId === input.workspaceId) {
+      const nextWorkspace = this.listUserWorkspaces(targetUser.id)[0];
+      if (!nextWorkspace) {
+        throw new BadRequestException("成员移除后没有可用工作区可切换");
+      }
+      targetUser.activeWorkspaceId = nextWorkspace.id;
+      await this.postgresStateService.upsertUser(targetUser);
+    }
+
+    return this.listWorkspaceMembers(input.workspaceId);
+  }
+
+  private async reassignWorkspaceOwnerIfNeeded(workspaceId: string, removedOwnerUserId: string) {
+    const workspace = this.getWorkspace(workspaceId);
+    if (workspace.ownerUserId !== removedOwnerUserId) {
+      return;
+    }
+
+    const nextOwner = this.workspaceMembers.find(
+      (item) => item.workspaceId === workspaceId && item.role === "owner",
+    );
+    if (!nextOwner) {
+      return;
+    }
+
+    workspace.ownerUserId = nextOwner.userId;
+    await this.postgresStateService.upsertWorkspace(workspace);
   }
 
   getWorkspace(workspaceId: string) {

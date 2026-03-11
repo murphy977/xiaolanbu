@@ -275,6 +275,17 @@ export class PostgresStateService implements OnModuleDestroy {
     );
   }
 
+  async deleteWorkspaceMember(userId: string, workspaceId: string) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(
+      `DELETE FROM xlb_workspace_members WHERE user_id = $1 AND workspace_id = $2`,
+      [userId, workspaceId],
+    );
+  }
+
   async upsertSession(record: SessionRecord) {
     if (!this.pool) {
       return;

@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
+  Patch,
   Post,
   UnauthorizedException,
 } from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
 import { AddWorkspaceMemberDto } from "./dto/add-workspace-member.dto";
+import { UpdateWorkspaceMemberDto } from "./dto/update-workspace-member.dto";
 
 @Controller("workspaces")
 export class WorkspacesController {
@@ -77,6 +80,48 @@ export class WorkspacesController {
       workspaceId,
       email: body.email,
       role: body.role,
+    });
+
+    return {
+      items,
+      currentUserRole:
+        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+    };
+  }
+
+  @Patch(":workspaceId/members/:memberId")
+  async updateWorkspaceMember(
+    @Param("workspaceId") workspaceId: string,
+    @Param("memberId") memberId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: UpdateWorkspaceMemberDto,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    const items = await this.storeService.updateWorkspaceMemberRole({
+      currentUserId: currentUser.id,
+      workspaceId,
+      memberId,
+      role: body.role,
+    });
+
+    return {
+      items,
+      currentUserRole:
+        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+    };
+  }
+
+  @Delete(":workspaceId/members/:memberId")
+  async removeWorkspaceMember(
+    @Param("workspaceId") workspaceId: string,
+    @Param("memberId") memberId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    const items = await this.storeService.removeWorkspaceMember({
+      currentUserId: currentUser.id,
+      workspaceId,
+      memberId,
     });
 
     return {
