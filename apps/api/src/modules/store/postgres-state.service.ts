@@ -2,11 +2,15 @@ import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { Pool } from "pg";
 
 import {
+  AuthUserRecord,
   DeploymentRecord,
+  SessionRecord,
   UsageLedgerRecord,
   UserRecord,
   WalletRecord,
   WalletTransactionRecord,
+  WorkspaceMembershipRecord,
+  WorkspaceRecord,
 } from "./models";
 
 @Injectable()
@@ -72,6 +76,37 @@ export class PostgresStateService implements OnModuleDestroy {
         data JSONB NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS xlb_users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        data JSONB NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS xlb_workspaces_catalog (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        data JSONB NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS xlb_workspace_members (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        data JSONB NOT NULL,
+        UNIQUE (user_id, workspace_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS xlb_sessions (
+        id TEXT PRIMARY KEY,
+        token TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        data JSONB NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS xlb_app_state (
         key TEXT PRIMARY KEY,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -119,6 +154,26 @@ export class PostgresStateService implements OnModuleDestroy {
       "SELECT data FROM xlb_wallet_transactions ORDER BY created_at DESC",
     );
     return rows;
+  }
+
+  async listUsers() {
+    return this.queryRows<AuthUserRecord>("SELECT data FROM xlb_users ORDER BY updated_at DESC");
+  }
+
+  async listWorkspacesCatalog() {
+    return this.queryRows<WorkspaceRecord>(
+      "SELECT data FROM xlb_workspaces_catalog ORDER BY updated_at DESC",
+    );
+  }
+
+  async listWorkspaceMembers() {
+    return this.queryRows<WorkspaceMembershipRecord>(
+      "SELECT data FROM xlb_workspace_members ORDER BY updated_at DESC",
+    );
+  }
+
+  async listSessions() {
+    return this.queryRows<SessionRecord>("SELECT data FROM xlb_sessions ORDER BY updated_at DESC");
   }
 
   async upsertDeployment(record: DeploymentRecord) {
@@ -200,6 +255,54 @@ export class PostgresStateService implements OnModuleDestroy {
     );
   }
 
+  async upsertUser(record: AuthUserRecord) {
+    await this.upsertJson("xlb_users", record.id, record.id, record);
+  }
+
+  async upsertWorkspace(record: WorkspaceRecord) {
+    await this.upsertJson("xlb_workspaces_catalog", record.id, record.ownerUserId, record);
+  }
+
+  async upsertWorkspaceMember(record: WorkspaceMembershipRecord) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        INSERT INTO xlb_workspace_members (id, user_id, workspace_id, updated_at, data)
+        VALUES ($1, $2, $3, NOW(), $4::jsonb)
+        ON CONFLICT (user_id, workspace_id)
+        DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+      `,
+      [record.id, record.userId, record.workspaceId, JSON.stringify(record)],
+    );
+  }
+
+  async upsertSession(record: SessionRecord) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        INSERT INTO xlb_sessions (id, token, user_id, updated_at, data)
+        VALUES ($1, $2, $3, NOW(), $4::jsonb)
+        ON CONFLICT (token)
+        DO UPDATE SET data = EXCLUDED.data, user_id = EXCLUDED.user_id, updated_at = NOW()
+      `,
+      [record.id, record.token, record.userId, JSON.stringify(record)],
+    );
+  }
+
+  async deleteSessionByToken(token: string) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(`DELETE FROM xlb_sessions WHERE token = $1`, [token]);
+  }
+
   private async queryRows<T>(sql: string) {
     if (!this.pool) {
       return [];
@@ -219,7 +322,7 @@ export class PostgresStateService implements OnModuleDestroy {
   }
 
   private async upsertJson(
-    tableName: "xlb_deployments" | "xlb_wallets",
+    tableName: "xlb_deployments" | "xlb_wallets" | "xlb_users" | "xlb_workspaces_catalog",
     id: string,
     workspaceId: string,
     data: unknown,

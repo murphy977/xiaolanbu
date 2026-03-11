@@ -9,6 +9,27 @@ export interface UserRecord {
   activeWorkspaceId: string;
 }
 
+export interface AuthUserRecord extends UserRecord {
+  passwordHash: string;
+  createdAt: string;
+}
+
+export interface WorkspaceMembershipRecord {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  role: "owner" | "member";
+  createdAt: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  token: string;
+  userId: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
 export interface WorkspaceRecord {
   id: string;
   ownerUserId: string;

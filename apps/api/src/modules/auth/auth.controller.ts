@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Patch, Post, UnauthorizedException } from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
 
@@ -7,21 +7,57 @@ export class AuthController {
   constructor(private readonly storeService: StoreService) {}
 
   @Get("me")
-  getMe() {
-    const user = this.storeService.getCurrentUser();
-    const workspaces = this.storeService.listWorkspaces();
+  async getMe(@Headers("x-xlb-session") sessionToken?: string) {
+    const context = this.storeService.getAuthContext(sessionToken);
+    if (!context) {
+      throw new UnauthorizedException("请先登录");
+    }
+
+    await this.storeService.touchSession(sessionToken);
     return {
-      user,
-      activeWorkspaceId: user.activeWorkspaceId,
-      currentWorkspace: workspaces.find((item) => item.id === user.activeWorkspaceId) ?? null,
-      workspaces,
+      user: context.user,
+      activeWorkspaceId: context.user.activeWorkspaceId,
+      currentWorkspace: context.currentWorkspace,
+      workspaces: context.workspaces,
     };
   }
 
+  @Post("register")
+  async register(
+    @Body("displayName") displayName: string,
+    @Body("email") email: string,
+    @Body("password") password: string,
+  ) {
+    return this.storeService.registerUser({
+      displayName: displayName ?? "",
+      email,
+      password,
+    });
+  }
+
+  @Post("login")
+  async login(@Body("email") email: string, @Body("password") password: string) {
+    return this.storeService.loginUser({ email, password });
+  }
+
+  @Post("logout")
+  async logout(@Headers("x-xlb-session") sessionToken?: string) {
+    await this.storeService.logoutSession(sessionToken);
+    return { ok: true };
+  }
+
   @Patch("workspace")
-  async setCurrentWorkspace(@Body("workspaceId") workspaceId: string) {
-    const user = await this.storeService.setCurrentWorkspace(workspaceId);
-    const workspaces = this.storeService.listWorkspaces();
+  async setCurrentWorkspace(
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body("workspaceId") workspaceId: string,
+  ) {
+    const authUser = this.storeService.getUserBySessionToken(sessionToken);
+    if (!authUser) {
+      throw new UnauthorizedException("请先登录");
+    }
+
+    const user = await this.storeService.setCurrentWorkspaceForUser(authUser.id, workspaceId);
+    const workspaces = this.storeService.listUserWorkspaces(authUser.id);
 
     return {
       user,

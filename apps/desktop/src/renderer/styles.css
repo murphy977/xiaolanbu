@@ -49,6 +49,59 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.auth-card {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  padding: 34px;
+  border-radius: 36px;
+  border: 1px solid rgba(31, 34, 39, 0.08);
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.94), rgba(255, 247, 239, 0.9));
+  box-shadow: 0 30px 80px rgba(31, 34, 39, 0.12);
+}
+
+.auth-title {
+  margin: 8px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.2vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+
+.auth-subtitle {
+  margin: 16px 0 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.auth-switch,
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-switch {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.auth-form {
+  margin-top: 18px;
+}
+
+.ghost-button.is-selected {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-md);
+}
+
 button {
   font: inherit;
 }

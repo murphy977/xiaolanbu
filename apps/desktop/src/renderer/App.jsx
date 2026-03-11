@@ -4,6 +4,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://47.86.38.197/api/v1")
   /\/+$/,
   "",
 );
+const SESSION_STORAGE_KEY = "xiaolanbu_session";
 
 const VIEW_META = {
   home: {
@@ -134,6 +135,27 @@ function getAppBridge() {
   return window.xiaolanbu ?? null;
 }
 
+function getStoredSessionToken() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.localStorage.getItem(SESSION_STORAGE_KEY) ?? "";
+}
+
+function setStoredSessionToken(value) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!value) {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(SESSION_STORAGE_KEY, value);
+}
+
 function formatCurrency(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return "--";
@@ -174,7 +196,16 @@ function formatDateTime(value) {
 }
 
 async function fetchJson(path, options) {
-  const response = await fetch(`${API_BASE}${path}`, options);
+  const headers = new Headers(options?.headers ?? {});
+  const sessionToken = getStoredSessionToken();
+  if (sessionToken) {
+    headers.set("x-xlb-session", sessionToken);
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
 
@@ -185,6 +216,83 @@ async function fetchJson(path, options) {
   }
 
   return data;
+}
+
+function AuthView({
+  authMode,
+  authForm,
+  authPending,
+  authError,
+  onAuthFormChange,
+  onAuthSubmit,
+  onAuthModeChange,
+}) {
+  return (
+    <div className="auth-shell">
+      <div className="ambient ambient-a"></div>
+      <div className="ambient ambient-b"></div>
+      <div className="ambient ambient-c"></div>
+      <section className="auth-card">
+        <div className="eyebrow">Xiaolanbu Cloud</div>
+        <h1 className="auth-title">先登录，再把你的实例、余额和控制台真正绑定到自己名下。</h1>
+        <p className="auth-subtitle">
+          这一版已经支持注册、登录和工作区切换。登录后，桌面端会只拉你自己的工作区、账单和云端实例。
+        </p>
+
+        <div className="auth-switch">
+          <button
+            className={`ghost-button small ${authMode === "login" ? "is-selected" : ""}`}
+            onClick={() => onAuthModeChange("login")}
+          >
+            登录
+          </button>
+          <button
+            className={`ghost-button small ${authMode === "register" ? "is-selected" : ""}`}
+            onClick={() => onAuthModeChange("register")}
+          >
+            注册
+          </button>
+        </div>
+
+        {authError ? <div className="inline-notice inline-notice--error">{authError}</div> : null}
+
+        <div className="auth-form">
+          {authMode === "register" ? (
+            <label className="field">
+              <span>昵称</span>
+              <input
+                type="text"
+                value={authForm.displayName}
+                onChange={(event) => onAuthFormChange("displayName", event.target.value)}
+                placeholder="例如：午松"
+              />
+            </label>
+          ) : null}
+          <label className="field">
+            <span>邮箱</span>
+            <input
+              type="email"
+              value={authForm.email}
+              onChange={(event) => onAuthFormChange("email", event.target.value)}
+              placeholder="you@xiaolanbu.app"
+            />
+          </label>
+          <label className="field">
+            <span>密码</span>
+            <input
+              type="password"
+              value={authForm.password}
+              onChange={(event) => onAuthFormChange("password", event.target.value)}
+              placeholder="至少 8 位"
+            />
+          </label>
+          <button className="primary-button" onClick={onAuthSubmit} disabled={authPending}>
+            {authPending ? "处理中..." : authMode === "login" ? "登录小懒布" : "创建账号"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function NavButton({ active, label, sub, icon, onClick }) {
@@ -1103,7 +1211,16 @@ export function App() {
     user: null,
     workspaces: [],
     activeWorkspaceId: "",
+    sessionToken: getStoredSessionToken(),
     loading: true,
+    authMode: "login",
+    authPending: false,
+    authError: "",
+    authForm: {
+      displayName: "",
+      email: "",
+      password: "",
+    },
   });
   const [createForm, setCreateForm] = useState(DEFAULT_DEPLOYMENT_FORM);
   const [workspaceState, setWorkspaceState] = useState({
@@ -1130,6 +1247,19 @@ export function App() {
     authState.workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
 
   const refreshAuthState = async () => {
+    const storedToken = getStoredSessionToken();
+    if (!storedToken) {
+      setAuthState((current) => ({
+        ...current,
+        user: null,
+        workspaces: [],
+        activeWorkspaceId: "",
+        sessionToken: "",
+        loading: false,
+      }));
+      return null;
+    }
+
     const authResult = await fetchJson("/auth/me");
     setAuthState({
       user: authResult.user ?? null,
@@ -1139,13 +1269,22 @@ export function App() {
         authResult.currentWorkspace?.id ??
         authResult.user?.activeWorkspaceId ??
         "",
+      sessionToken: storedToken,
       loading: false,
+      authMode: "login",
+      authPending: false,
+      authError: "",
+      authForm: {
+        displayName: "",
+        email: authResult.user?.email ?? "",
+        password: "",
+      },
     });
     return authResult;
   };
 
-  const refreshWorkspaceData = async ({ withSync = false } = {}) => {
-    if (!activeWorkspaceId) {
+  const refreshWorkspaceData = async ({ withSync = false, workspaceId = activeWorkspaceId } = {}) => {
+    if (!workspaceId) {
       return;
     }
 
@@ -1160,16 +1299,16 @@ export function App() {
 
     try {
       if (withSync) {
-        await fetchJson(`/billing/workspaces/${activeWorkspaceId}/sync`, { method: "POST" });
+        await fetchJson(`/billing/workspaces/${workspaceId}/sync`, { method: "POST" });
       }
 
       const [walletResult, usageResult, summaryResult, transactionsResult, deploymentsResult] =
         await Promise.all([
-          fetchJson(`/billing/workspaces/${activeWorkspaceId}/wallet`),
-          fetchJson(`/billing/workspaces/${activeWorkspaceId}/usage?period=today`),
-          fetchJson(`/billing/workspaces/${activeWorkspaceId}/deployments/summary?period=today`),
-          fetchJson(`/billing/workspaces/${activeWorkspaceId}/transactions?limit=8`),
-          fetchJson(`/deployments?workspaceId=${encodeURIComponent(activeWorkspaceId)}`),
+          fetchJson(`/billing/workspaces/${workspaceId}/wallet`),
+          fetchJson(`/billing/workspaces/${workspaceId}/usage?period=today`),
+          fetchJson(`/billing/workspaces/${workspaceId}/deployments/summary?period=today`),
+          fetchJson(`/billing/workspaces/${workspaceId}/transactions?limit=8`),
+          fetchJson(`/deployments?workspaceId=${encodeURIComponent(workspaceId)}`),
         ]);
 
       startTransition(() => {
@@ -1198,7 +1337,21 @@ export function App() {
   };
 
   useEffect(() => {
-    void refreshAuthState();
+    void (async () => {
+      try {
+        await refreshAuthState();
+      } catch {
+        setStoredSessionToken("");
+        setAuthState((current) => ({
+          ...current,
+          user: null,
+          workspaces: [],
+          activeWorkspaceId: "",
+          sessionToken: "",
+          loading: false,
+        }));
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1267,6 +1420,140 @@ export function App() {
         error: error instanceof Error ? error.message : "切换工作区失败，请稍后再试。",
       }));
     }
+  };
+
+  const handleAuthFormChange = (field, value) => {
+    setAuthState((current) => ({
+      ...current,
+      authForm: {
+        ...current.authForm,
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleAuthSubmit = async () => {
+    const authMode = authState.authMode;
+    const { displayName, email, password } = authState.authForm;
+
+    if (!email.trim() || !password.trim()) {
+      setAuthState((current) => ({
+        ...current,
+        authError: "请先填写邮箱和密码。",
+      }));
+      return;
+    }
+
+    if (authMode === "register" && !displayName.trim()) {
+      setAuthState((current) => ({
+        ...current,
+        authError: "注册时请先填写昵称。",
+      }));
+      return;
+    }
+
+    setAuthState((current) => ({
+      ...current,
+      authPending: true,
+      authError: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/auth/${authMode}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName,
+          email,
+          password,
+        }),
+      });
+
+      setStoredSessionToken(result.sessionToken ?? "");
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? null,
+        workspaces: result.workspaces ?? [],
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          "",
+        sessionToken: result.sessionToken ?? "",
+        loading: false,
+        authPending: false,
+        authError: "",
+        authForm: {
+          displayName: "",
+          email: result.user?.email ?? email,
+          password: "",
+        },
+      }));
+      await refreshWorkspaceData({
+        workspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          "",
+      });
+    } catch (error) {
+      setAuthState((current) => ({
+        ...current,
+        authPending: false,
+        authError: error instanceof Error ? error.message : "登录失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleAuthModeChange = (mode) => {
+    setAuthState((current) => ({
+      ...current,
+      authMode: mode,
+      authError: "",
+    }));
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetchJson("/auth/logout", { method: "POST" });
+    } catch {
+      // Ignore logout transport errors and clear local session anyway.
+    }
+
+    setStoredSessionToken("");
+    setAuthState((current) => ({
+      ...current,
+      user: null,
+      workspaces: [],
+      activeWorkspaceId: "",
+      sessionToken: "",
+      loading: false,
+      authPending: false,
+      authError: "",
+      authMode: "login",
+      authForm: {
+        displayName: "",
+        email: "",
+        password: "",
+      },
+    }));
+    setWorkspaceState((current) => ({
+      ...current,
+      wallet: null,
+      usageSummary: null,
+      deploymentSummaries: [],
+      deployments: [],
+      transactions: [],
+      loading: false,
+      syncing: false,
+      error: "",
+      createError: "",
+      createResult: null,
+      createDiagnostics: [],
+      createFeedback: "",
+    }));
   };
 
   const handleTopup = async (amount) => {
@@ -1533,6 +1820,34 @@ export function App() {
     [workspaceState.deployments],
   );
 
+  if (authState.loading) {
+    return (
+      <div className="auth-shell">
+        <div className="ambient ambient-a"></div>
+        <div className="ambient ambient-b"></div>
+        <div className="ambient ambient-c"></div>
+        <section className="auth-card">
+          <div className="eyebrow">Xiaolanbu Cloud</div>
+          <h1 className="auth-title">正在准备你的工作区与云端状态…</h1>
+        </section>
+      </div>
+    );
+  }
+
+  if (!authState.sessionToken) {
+    return (
+      <AuthView
+        authMode={authState.authMode}
+        authForm={authState.authForm}
+        authPending={authState.authPending}
+        authError={authState.authError}
+        onAuthFormChange={handleAuthFormChange}
+        onAuthSubmit={handleAuthSubmit}
+        onAuthModeChange={handleAuthModeChange}
+      />
+    );
+  }
+
   return (
     <>
       <div className="ambient ambient-a"></div>
@@ -1571,8 +1886,12 @@ export function App() {
                 <span className="pill-dot"></span>
                 {activeDeploymentCount > 0 ? `云端在线 · ${activeDeploymentCount}` : "云端待连接"}
               </div>
+              <div className="pill">{authState.user?.displayName ?? "当前用户"}</div>
               <button className="icon-button" aria-label="Refresh" onClick={() => refreshWorkspaceData({ withSync: currentView === "membership" })}>
                 ↻
+              </button>
+              <button className="ghost-button small" onClick={handleLogout}>
+                退出
               </button>
               <button className="primary-button" onClick={() => setCurrentView("assistant")}>
                 开始对话

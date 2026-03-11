@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 import {
+  AuthUserRecord,
   BillingFeedRecord,
   DeploymentUsageSummaryRecord,
   DeploymentAccessRecord,
@@ -9,9 +11,11 @@ import {
   DeploymentStatus,
   UsageLedgerRecord,
   UsageSummaryRecord,
+  SessionRecord,
   UserRecord,
   WalletRecord,
   WalletTransactionRecord,
+  WorkspaceMembershipRecord,
   WorkspaceRecord,
 } from "./models";
 import { PostgresStateService } from "./postgres-state.service";
@@ -48,7 +52,7 @@ export class StoreService implements OnModuleInit {
     activeWorkspaceId: "ws_main",
   };
 
-  private readonly workspaces: WorkspaceRecord[] = [
+  private workspaces: WorkspaceRecord[] = [
     {
       id: "ws_main",
       ownerUserId: "user_001",
@@ -64,6 +68,37 @@ export class StoreService implements OnModuleInit {
       status: "trial",
     },
   ];
+
+  private users: AuthUserRecord[] = [
+    {
+      id: "user_001",
+      displayName: "午松",
+      email: "owner@xiaolanbu.app",
+      avatarInitial: "午",
+      activeWorkspaceId: "ws_main",
+      passwordHash: this.hashPassword("Xiaolanbu123!"),
+      createdAt: "2026-03-08T10:00:00.000Z",
+    },
+  ];
+
+  private workspaceMembers: WorkspaceMembershipRecord[] = [
+    {
+      id: "wsm_main_owner",
+      userId: "user_001",
+      workspaceId: "ws_main",
+      role: "owner",
+      createdAt: "2026-03-08T10:00:00.000Z",
+    },
+    {
+      id: "wsm_team_owner",
+      userId: "user_001",
+      workspaceId: "ws_team",
+      role: "owner",
+      createdAt: "2026-03-08T10:00:00.000Z",
+    },
+  ];
+
+  private sessions: SessionRecord[] = [];
 
   private deployments: DeploymentRecord[] = [
     {
@@ -222,15 +257,32 @@ export class StoreService implements OnModuleInit {
       return;
     }
 
-    const [persistedDeployments, persistedWallets, persistedUsageLedger, persistedWalletTransactions] =
+    const [
+      persistedDeployments,
+      persistedWallets,
+      persistedUsageLedger,
+      persistedWalletTransactions,
+      persistedUsers,
+      persistedWorkspaces,
+      persistedWorkspaceMembers,
+      persistedSessions,
+    ] =
       await Promise.all([
         this.postgresStateService.listDeployments(),
         this.postgresStateService.listWallets(),
         this.postgresStateService.listUsageLedger(),
         this.postgresStateService.listWalletTransactions(),
+        this.postgresStateService.listUsers(),
+        this.postgresStateService.listWorkspacesCatalog(),
+        this.postgresStateService.listWorkspaceMembers(),
+        this.postgresStateService.listSessions(),
       ]);
     const persistedUser = await this.postgresStateService.getCurrentUser();
 
+    this.users = this.mergeById(this.users, persistedUsers);
+    this.workspaces = this.mergeById(this.workspaces, persistedWorkspaces);
+    this.workspaceMembers = this.mergeById(this.workspaceMembers, persistedWorkspaceMembers);
+    this.sessions = this.mergeById(this.sessions, persistedSessions);
     if (persistedUser) {
       this.currentUser = {
         ...this.currentUser,
@@ -258,6 +310,17 @@ export class StoreService implements OnModuleInit {
         this.walletTransactions.map((item) => this.postgresStateService.insertWalletTransaction(item)),
       );
     }
+    if (persistedUsers.length === 0) {
+      await Promise.all(this.users.map((item) => this.postgresStateService.upsertUser(item)));
+    }
+    if (persistedWorkspaces.length === 0) {
+      await Promise.all(this.workspaces.map((item) => this.postgresStateService.upsertWorkspace(item)));
+    }
+    if (persistedWorkspaceMembers.length === 0) {
+      await Promise.all(
+        this.workspaceMembers.map((item) => this.postgresStateService.upsertWorkspaceMember(item)),
+      );
+    }
     if (!persistedUser) {
       await this.postgresStateService.upsertCurrentUser(this.currentUser);
     }
@@ -269,6 +332,126 @@ export class StoreService implements OnModuleInit {
 
   getCurrentUser() {
     return this.currentUser;
+  }
+
+  getUserBySessionToken(token?: string | null) {
+    if (!token) {
+      return null;
+    }
+
+    const session = this.sessions.find((item) => item.token === token);
+    if (!session) {
+      return null;
+    }
+
+    return this.users.find((item) => item.id === session.userId) ?? null;
+  }
+
+  getAuthContext(token?: string | null) {
+    const user = this.getUserBySessionToken(token);
+    if (!user) {
+      return null;
+    }
+
+    const publicUser = this.toUserRecord(user);
+    const workspaces = this.listUserWorkspaces(user.id);
+    return {
+      user: publicUser,
+      workspaces,
+      currentWorkspace:
+        workspaces.find((item) => item.id === publicUser.activeWorkspaceId) ?? workspaces[0] ?? null,
+    };
+  }
+
+  async registerUser(input: { displayName: string; email: string; password: string }) {
+    const email = input.email.trim().toLowerCase();
+    if (this.users.some((item) => item.email.toLowerCase() === email)) {
+      throw new NotFoundException("该邮箱已存在");
+    }
+
+    const userId = `user_${Date.now()}`;
+    const workspaceId = `ws_${Date.now()}`;
+    const now = new Date().toISOString();
+    const displayName = input.displayName.trim() || email.split("@")[0] || "用户";
+
+    const user: AuthUserRecord = {
+      id: userId,
+      displayName,
+      email,
+      avatarInitial: displayName.charAt(0) || "小",
+      activeWorkspaceId: workspaceId,
+      passwordHash: this.hashPassword(input.password),
+      createdAt: now,
+    };
+    const workspace: WorkspaceRecord = {
+      id: workspaceId,
+      ownerUserId: userId,
+      name: `${displayName} 的工作区`,
+      planName: "轻享版",
+      status: "trial",
+    };
+    const membership: WorkspaceMembershipRecord = {
+      id: `wsm_${Date.now()}`,
+      userId,
+      workspaceId,
+      role: "owner",
+      createdAt: now,
+    };
+    const wallet: WalletRecord = {
+      id: `wallet_${Date.now()}`,
+      workspaceId,
+      balanceCny: 20,
+      frozenCny: 0,
+      currency: "CNY",
+    };
+
+    this.users.unshift(user);
+    this.workspaces.unshift(workspace);
+    this.workspaceMembers.unshift(membership);
+    this.wallets.unshift(wallet);
+
+    await Promise.all([
+      this.postgresStateService.upsertUser(user),
+      this.postgresStateService.upsertWorkspace(workspace),
+      this.postgresStateService.upsertWorkspaceMember(membership),
+      this.postgresStateService.upsertWallet(wallet),
+    ]);
+
+    return this.createSessionForUser(user);
+  }
+
+  async loginUser(input: { email: string; password: string }) {
+    const email = input.email.trim().toLowerCase();
+    const user = this.users.find((item) => item.email.toLowerCase() === email);
+    if (!user || !this.verifyPassword(input.password, user.passwordHash)) {
+      throw new NotFoundException("邮箱或密码不正确");
+    }
+
+    return this.createSessionForUser(user);
+  }
+
+  async logoutSession(token?: string | null) {
+    if (!token) {
+      return;
+    }
+
+    this.sessions = this.sessions.filter((item) => item.token !== token);
+    await this.postgresStateService.deleteSessionByToken(token);
+  }
+
+  async touchSession(token?: string | null) {
+    if (!token) {
+      return null;
+    }
+
+    const session = this.sessions.find((item) => item.token === token);
+    if (!session) {
+      return null;
+    }
+
+    session.lastSeenAt = new Date().toISOString();
+    await this.postgresStateService.upsertSession(session);
+    return session;
   }
 
   async setCurrentWorkspace(workspaceId: string) {
@@ -283,6 +466,34 @@ export class StoreService implements OnModuleInit {
 
   listWorkspaces() {
     return this.workspaces;
+  }
+
+  listUserWorkspaces(userId: string) {
+    const workspaceIds = new Set(
+      this.workspaceMembers.filter((item) => item.userId === userId).map((item) => item.workspaceId),
+    );
+    return this.workspaces.filter((item) => workspaceIds.has(item.id));
+  }
+
+  async setCurrentWorkspaceForUser(userId: string, workspaceId: string) {
+    const user = this.users.find((item) => item.id === userId);
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const targetWorkspace = this.listUserWorkspaces(userId).find((item) => item.id === workspaceId);
+    if (!targetWorkspace) {
+      throw new NotFoundException(`Workspace ${workspaceId} not found`);
+    }
+
+    user.activeWorkspaceId = workspaceId;
+    await this.postgresStateService.upsertUser(user);
+
+    if (user.id === this.currentUser.id) {
+      await this.setCurrentWorkspace(workspaceId);
+    }
+
+    return this.toUserRecord(user);
   }
 
   getWorkspace(workspaceId: string) {
@@ -607,6 +818,60 @@ export class StoreService implements OnModuleInit {
       totalCostCny: this.roundCurrency(items.reduce((sum, item) => sum + item.billableCostCny, 0)),
       topModels,
     };
+  }
+
+  private async createSessionForUser(user: AuthUserRecord) {
+    const now = new Date().toISOString();
+    const session: SessionRecord = {
+      id: `sess_${Date.now()}`,
+      token: `xlb_sess_${randomBytes(24).toString("hex")}`,
+      userId: user.id,
+      createdAt: now,
+      lastSeenAt: now,
+    };
+
+    this.sessions.unshift(session);
+    await this.postgresStateService.upsertSession(session);
+
+    return {
+      sessionToken: session.token,
+      user: this.toUserRecord(user),
+      activeWorkspaceId: user.activeWorkspaceId,
+      currentWorkspace:
+        this.listUserWorkspaces(user.id).find((item) => item.id === user.activeWorkspaceId) ?? null,
+      workspaces: this.listUserWorkspaces(user.id),
+    };
+  }
+
+  private toUserRecord(user: AuthUserRecord): UserRecord {
+    return {
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      avatarInitial: user.avatarInitial,
+      activeWorkspaceId: user.activeWorkspaceId,
+    };
+  }
+
+  private hashPassword(password: string) {
+    const salt = randomUUID().replace(/-/g, "");
+    const hash = scryptSync(password, salt, 64).toString("hex");
+    return `${salt}:${hash}`;
+  }
+
+  private verifyPassword(password: string, passwordHash: string) {
+    const [salt, storedHash] = passwordHash.split(":");
+    if (!salt || !storedHash) {
+      return false;
+    }
+
+    const derivedHash = scryptSync(password, salt, 64);
+    const storedBuffer = Buffer.from(storedHash, "hex");
+    if (derivedHash.length !== storedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(derivedHash, storedBuffer);
   }
 
   private roundCurrency(value: number) {
