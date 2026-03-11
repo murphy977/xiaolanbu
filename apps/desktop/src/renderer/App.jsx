@@ -837,6 +837,16 @@ function SettingsView({
   onCopyText,
   actionPendingId,
   onDeploymentAction,
+  workspaceCreateName,
+  workspaceCreatePending,
+  workspaceCreateError,
+  workspaceRenameName,
+  workspaceRenamePending,
+  workspaceRenameError,
+  onWorkspaceCreateNameChange,
+  onWorkspaceCreate,
+  onWorkspaceRenameNameChange,
+  onWorkspaceRename,
   memberInviteEmail,
   memberInvitePending,
   memberInviteError,
@@ -1055,6 +1065,57 @@ function SettingsView({
               </div>
               {createFeedback ? <div className="section-note">{createFeedback}</div> : null}
             </div>
+          ) : null}
+        </article>
+
+        <article className="card settings-card">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">工作区管理</div>
+              <div className="card-subtitle">你可以把不同场景拆成不同工作区，再按需要邀请团队成员一起协作。</div>
+            </div>
+          </div>
+          <div className="create-grid">
+            <label className="field">
+              <span>新建工作区</span>
+              <input
+                type="text"
+                value={workspaceCreateName}
+                onChange={(event) => onWorkspaceCreateNameChange(event.target.value)}
+                placeholder="例如：售前团队 / 内容运营"
+              />
+            </label>
+            <label className="field">
+              <span>重命名当前工作区</span>
+              <input
+                type="text"
+                value={workspaceRenameName}
+                onChange={(event) => onWorkspaceRenameNameChange(event.target.value)}
+                placeholder="修改当前工作区名称"
+              />
+            </label>
+          </div>
+          <div className="result-actions">
+            <button
+              className="primary-button small"
+              onClick={onWorkspaceCreate}
+              disabled={workspaceCreatePending}
+            >
+              {workspaceCreatePending ? "创建中..." : "创建并切换"}
+            </button>
+            <button
+              className="ghost-button small"
+              onClick={onWorkspaceRename}
+              disabled={workspaceRenamePending || !activeWorkspace?.id}
+            >
+              {workspaceRenamePending ? "保存中..." : "保存当前名称"}
+            </button>
+          </div>
+          {workspaceCreateError ? (
+            <div className="inline-notice inline-notice--error">{workspaceCreateError}</div>
+          ) : null}
+          {workspaceRenameError ? (
+            <div className="inline-notice inline-notice--error">{workspaceRenameError}</div>
           ) : null}
         </article>
 
@@ -1340,6 +1401,8 @@ export function App() {
     },
   });
   const [createForm, setCreateForm] = useState(DEFAULT_DEPLOYMENT_FORM);
+  const [workspaceCreateName, setWorkspaceCreateName] = useState("");
+  const [workspaceRenameName, setWorkspaceRenameName] = useState("");
   const [workspaceState, setWorkspaceState] = useState({
     wallet: null,
     usageSummary: null,
@@ -1350,12 +1413,16 @@ export function App() {
     loading: true,
     syncing: false,
     topupPending: false,
+    workspaceCreatePending: false,
+    workspaceRenamePending: false,
     memberInvitePending: false,
     memberActionPendingId: null,
     createPending: false,
     actionPendingId: null,
     actionPendingType: "",
     error: "",
+    workspaceCreateError: "",
+    workspaceRenameError: "",
     memberInviteError: "",
     memberActionError: "",
     createError: "",
@@ -1368,6 +1435,10 @@ export function App() {
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
   const activeWorkspace =
     authState.workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
+
+  useEffect(() => {
+    setWorkspaceRenameName(activeWorkspace?.name ?? "");
+  }, [activeWorkspace?.id, activeWorkspace?.name]);
 
   const refreshAuthState = async () => {
     const storedToken = getStoredSessionToken();
@@ -1455,6 +1526,8 @@ export function App() {
           syncing: false,
           memberActionPendingId: null,
           error: "",
+          workspaceCreateError: "",
+          workspaceRenameError: "",
           memberInviteError: "",
           memberActionError: "",
         }));
@@ -1540,10 +1613,14 @@ export function App() {
         deployments: [],
         members: [],
         transactions: [],
+        workspaceCreatePending: false,
+        workspaceRenamePending: false,
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
         error: "",
+        workspaceCreateError: "",
+        workspaceRenameError: "",
         memberInviteError: "",
         memberActionPendingId: null,
         memberActionError: "",
@@ -1689,8 +1766,12 @@ export function App() {
       transactions: [],
       loading: false,
       syncing: false,
+      workspaceCreatePending: false,
+      workspaceRenamePending: false,
       memberActionPendingId: null,
       error: "",
+      workspaceCreateError: "",
+      workspaceRenameError: "",
       memberInviteError: "",
       memberActionError: "",
       createError: "",
@@ -1761,6 +1842,131 @@ export function App() {
         topupPending: false,
       }));
     });
+  };
+
+  const handleWorkspaceCreate = async () => {
+    if (!workspaceCreateName.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceCreateError: "请先填写新工作区名称。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      workspaceCreatePending: true,
+      workspaceCreateError: "",
+      workspaceRenameError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson("/workspaces", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: workspaceCreateName.trim(),
+        }),
+      });
+
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? current.user,
+        workspaces: result.workspaces ?? current.workspaces,
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          current.activeWorkspaceId,
+      }));
+      setWorkspaceCreateName("");
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceCreatePending: false,
+        workspaceCreateError: "",
+        createFeedback: "新工作区已创建，并已自动切换过去。",
+      }));
+      await refreshWorkspaceData({
+        workspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          "",
+      });
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceCreatePending: false,
+        workspaceCreateError: error instanceof Error ? error.message : "创建工作区失败，请稍后再试。",
+      }));
+    }
+  };
+
+  const handleWorkspaceRename = async () => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    if (!workspaceRenameName.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceRenameError: "请先填写工作区名称。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      workspaceRenamePending: true,
+      workspaceRenameError: "",
+      workspaceCreateError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: workspaceRenameName.trim(),
+        }),
+      });
+
+      setAuthState((current) => ({
+        ...current,
+        user: result.user ?? current.user,
+        workspaces: result.workspaces ?? current.workspaces,
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          current.activeWorkspaceId,
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceRenamePending: false,
+        workspaceRenameError: "",
+        createFeedback: "当前工作区名称已更新。",
+      }));
+      await refreshWorkspaceData({
+        workspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          activeWorkspaceId,
+      });
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        workspaceRenamePending: false,
+        workspaceRenameError: error instanceof Error ? error.message : "更新工作区名称失败，请稍后再试。",
+      }));
+    }
   };
 
   const handleCreateFormChange = (field, value) => {
@@ -2220,6 +2426,16 @@ export function App() {
               onCopyText={handleCopyText}
               actionPendingId={workspaceState.actionPendingId}
               onDeploymentAction={handleDeploymentAction}
+              workspaceCreateName={workspaceCreateName}
+              workspaceCreatePending={workspaceState.workspaceCreatePending}
+              workspaceCreateError={workspaceState.workspaceCreateError}
+              workspaceRenameName={workspaceRenameName}
+              workspaceRenamePending={workspaceState.workspaceRenamePending}
+              workspaceRenameError={workspaceState.workspaceRenameError}
+              onWorkspaceCreateNameChange={setWorkspaceCreateName}
+              onWorkspaceCreate={handleWorkspaceCreate}
+              onWorkspaceRenameNameChange={setWorkspaceRenameName}
+              onWorkspaceRename={handleWorkspaceRename}
               memberInviteEmail={memberInviteEmail}
               memberInvitePending={workspaceState.memberInvitePending}
               memberInviteError={workspaceState.memberInviteError}

@@ -12,7 +12,9 @@ import {
 
 import { StoreService } from "../store/store.service";
 import { AddWorkspaceMemberDto } from "./dto/add-workspace-member.dto";
+import { CreateWorkspaceDto } from "./dto/create-workspace.dto";
 import { UpdateWorkspaceMemberDto } from "./dto/update-workspace-member.dto";
+import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 
 @Controller("workspaces")
 export class WorkspacesController {
@@ -35,6 +37,18 @@ export class WorkspacesController {
     };
   }
 
+  @Post()
+  async createWorkspace(
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: CreateWorkspaceDto,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    return this.storeService.createWorkspaceForUser({
+      userId: currentUser.id,
+      name: body.name,
+    });
+  }
+
   @Get(":workspaceId")
   getWorkspace(
     @Param("workspaceId") workspaceId: string,
@@ -51,6 +65,20 @@ export class WorkspacesController {
       wallet,
       deployments,
     };
+  }
+
+  @Patch(":workspaceId")
+  async updateWorkspace(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: UpdateWorkspaceDto,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    return this.storeService.updateWorkspaceName({
+      currentUserId: currentUser.id,
+      workspaceId,
+      name: body.name,
+    });
   }
 
   @Get(":workspaceId/members")

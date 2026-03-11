@@ -381,7 +381,6 @@ export class StoreService implements OnModuleInit {
     }
 
     const userId = `user_${Date.now()}`;
-    const workspaceId = `ws_${Date.now()}`;
     const now = new Date().toISOString();
     const displayName = input.displayName.trim() || email.split("@")[0] || "用户";
 
@@ -390,31 +389,17 @@ export class StoreService implements OnModuleInit {
       displayName,
       email,
       avatarInitial: displayName.charAt(0) || "小",
-      activeWorkspaceId: workspaceId,
+      activeWorkspaceId: "",
       passwordHash: this.hashPassword(input.password),
       createdAt: now,
     };
-    const workspace: WorkspaceRecord = {
-      id: workspaceId,
-      ownerUserId: userId,
+    const { workspace, membership, wallet } = this.createOwnedWorkspaceBundle(user.id, {
       name: `${displayName} 的工作区`,
       planName: "轻享版",
       status: "trial",
-    };
-    const membership: WorkspaceMembershipRecord = {
-      id: `wsm_${Date.now()}`,
-      userId,
-      workspaceId,
-      role: "owner",
-      createdAt: now,
-    };
-    const wallet: WalletRecord = {
-      id: `wallet_${Date.now()}`,
-      workspaceId,
-      balanceCny: 20,
-      frozenCny: 0,
-      currency: "CNY",
-    };
+      initialBalanceCny: 20,
+    });
+    user.activeWorkspaceId = workspace.id;
 
     this.users.unshift(user);
     this.workspaces.unshift(workspace);
@@ -429,6 +414,58 @@ export class StoreService implements OnModuleInit {
     ]);
 
     return this.createSessionForUser(user);
+  }
+
+  async createWorkspaceForUser(input: { userId: string; name: string }) {
+    const user = this.users.find((item) => item.id === input.userId);
+    if (!user) {
+      throw new NotFoundException(`User ${input.userId} not found`);
+    }
+
+    const name = input.name.trim();
+    if (!name) {
+      throw new BadRequestException("请先填写工作区名称");
+    }
+
+    const { workspace, membership, wallet } = this.createOwnedWorkspaceBundle(user.id, {
+      name,
+      planName: "轻享版",
+      status: "trial",
+      initialBalanceCny: 20,
+    });
+    user.activeWorkspaceId = workspace.id;
+
+    this.workspaces.unshift(workspace);
+    this.workspaceMembers.unshift(membership);
+    this.wallets.unshift(wallet);
+
+    await Promise.all([
+      this.postgresStateService.upsertWorkspace(workspace),
+      this.postgresStateService.upsertWorkspaceMember(membership),
+      this.postgresStateService.upsertWallet(wallet),
+      this.postgresStateService.upsertUser(user),
+    ]);
+
+    if (user.id === this.currentUser.id) {
+      await this.setCurrentWorkspace(workspace.id);
+    }
+
+    return this.getAuthContextByUserId(user.id);
+  }
+
+  async updateWorkspaceName(input: { currentUserId: string; workspaceId: string; name: string }) {
+    this.assertUserCanManageWorkspace(input.currentUserId, input.workspaceId);
+
+    const workspace = this.getWorkspace(input.workspaceId);
+    const name = input.name.trim();
+    if (!name) {
+      throw new BadRequestException("请先填写工作区名称");
+    }
+
+    workspace.name = name;
+    await this.postgresStateService.upsertWorkspace(workspace);
+
+    return this.getAuthContextByUserId(input.currentUserId);
   }
 
   async loginUser(input: { email: string; password: string }) {
@@ -711,6 +748,66 @@ export class StoreService implements OnModuleInit {
 
     workspace.ownerUserId = nextOwner.userId;
     await this.postgresStateService.upsertWorkspace(workspace);
+  }
+
+  private createOwnedWorkspaceBundle(
+    userId: string,
+    input: {
+      name: string;
+      planName: WorkspaceRecord["planName"];
+      status: WorkspaceRecord["status"];
+      initialBalanceCny: number;
+    },
+  ) {
+    const now = new Date().toISOString();
+    const workspaceId = `ws_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+    const workspace: WorkspaceRecord = {
+      id: workspaceId,
+      ownerUserId: userId,
+      name: input.name,
+      planName: input.planName,
+      status: input.status,
+    };
+    const membership: WorkspaceMembershipRecord = {
+      id: `wsm_${Date.now()}_${this.workspaceMembers.length + 1}`,
+      userId,
+      workspaceId,
+      role: "owner",
+      createdAt: now,
+    };
+    const wallet: WalletRecord = {
+      id: `wallet_${Date.now()}_${this.wallets.length + 1}`,
+      workspaceId,
+      balanceCny: input.initialBalanceCny,
+      frozenCny: 0,
+      currency: "CNY",
+    };
+
+    return {
+      workspace,
+      membership,
+      wallet,
+    };
+  }
+
+  private getAuthContextByUserId(userId: string) {
+    const user = this.users.find((item) => item.id === userId);
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const workspaces = this.listUserWorkspaceViews(user.id);
+    const publicUser = this.toUserRecord(user);
+    return {
+      user: publicUser,
+      workspaces,
+      activeWorkspaceId: publicUser.activeWorkspaceId,
+      currentWorkspace:
+        workspaces.find((item) => item.id === publicUser.activeWorkspaceId) ?? workspaces[0] ?? null,
+      currentWorkspaceRole:
+        this.getWorkspaceMembership(user.id, publicUser.activeWorkspaceId)?.role ?? null,
+    };
   }
 
   getWorkspace(workspaceId: string) {
