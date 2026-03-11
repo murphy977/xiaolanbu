@@ -27,6 +27,16 @@ export class BillingController {
     };
   }
 
+  @Get("workspaces/:workspaceId/deployments/summary")
+  listDeploymentUsageSummaries(
+    @Param("workspaceId") workspaceId: string,
+    @Query("period") period?: "today" | "7d" | "30d",
+  ) {
+    return {
+      items: this.billingService.listDeploymentUsageSummaries(workspaceId, period ?? "today"),
+    };
+  }
+
   @Get("workspaces/:workspaceId/feed")
   listBillingFeed(@Param("workspaceId") workspaceId: string) {
     return {

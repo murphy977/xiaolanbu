@@ -128,6 +128,25 @@ export interface UsageSummaryRecord {
   }>;
 }
 
+export interface DeploymentUsageSummaryRecord {
+  workspaceId: string;
+  deploymentId: string;
+  deploymentName: string;
+  mode: DeploymentMode;
+  provider: string;
+  region: string;
+  status: DeploymentStatus;
+  period: "today" | "7d" | "30d";
+  requestCount: number;
+  totalTokens: number;
+  totalCostCny: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  reasoningTokens: number;
+  lastRequestAt?: string;
+}
+
 export interface BillingFeedRecord {
   id: string;
   workspaceId: string;

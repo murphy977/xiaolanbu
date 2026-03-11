@@ -143,6 +143,13 @@ export class BillingService {
     return this.storeService.listWalletTransactions(workspaceId, limit);
   }
 
+  listDeploymentUsageSummaries(
+    workspaceId: string,
+    period: "today" | "7d" | "30d" = "today",
+  ) {
+    return this.storeService.listDeploymentUsageSummaries(workspaceId, period);
+  }
+
   private resolveTokenIds(log: LiteLlmSpendLogRecord) {
     const metadata =
       log.metadata && typeof log.metadata === "object" ? log.metadata : ({} as Record<string, unknown>);

@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/com
 
 import {
   BillingFeedRecord,
+  DeploymentUsageSummaryRecord,
   DeploymentAccessRecord,
   DeploymentGatewayKeyRecord,
   DeploymentRecord,
@@ -323,6 +324,69 @@ export class StoreService implements OnModuleInit {
       throw new NotFoundException(`Usage summary for workspace ${workspaceId} not found`);
     }
     return summary;
+  }
+
+  listDeploymentUsageSummaries(workspaceId: string, period: "today" | "7d" | "30d") {
+    this.getWorkspace(workspaceId);
+
+    const now = Date.now();
+    const periodStart =
+      period === "today"
+        ? now - 24 * 60 * 60 * 1000
+        : period === "7d"
+          ? now - 7 * 24 * 60 * 60 * 1000
+          : now - 30 * 24 * 60 * 60 * 1000;
+
+    const ledgerByDeploymentId = new Map<string, UsageLedgerRecord[]>();
+
+    for (const item of this.usageLedger) {
+      if (item.workspaceId !== workspaceId) {
+        continue;
+      }
+
+      const finishedAt = Date.parse(item.finishedAt);
+      if (!Number.isFinite(finishedAt) || finishedAt < periodStart) {
+        continue;
+      }
+
+      const bucket = ledgerByDeploymentId.get(item.deploymentId) ?? [];
+      bucket.push(item);
+      ledgerByDeploymentId.set(item.deploymentId, bucket);
+    }
+
+    return this.listDeployments(workspaceId)
+      .map<DeploymentUsageSummaryRecord>((deployment) => {
+        const items = ledgerByDeploymentId.get(deployment.id) ?? [];
+        return {
+          workspaceId,
+          deploymentId: deployment.id,
+          deploymentName: deployment.name,
+          mode: deployment.mode,
+          provider: deployment.provider,
+          region: deployment.region,
+          status: deployment.status,
+          period,
+          requestCount: items.length,
+          totalTokens: items.reduce((sum, item) => sum + item.totalTokens, 0),
+          totalCostCny: this.roundCurrency(
+            items.reduce((sum, item) => sum + item.billableCostCny, 0),
+          ),
+          promptTokens: items.reduce((sum, item) => sum + item.promptTokens, 0),
+          completionTokens: items.reduce((sum, item) => sum + item.completionTokens, 0),
+          cachedTokens: items.reduce((sum, item) => sum + item.cachedTokens, 0),
+          reasoningTokens: items.reduce((sum, item) => sum + item.reasoningTokens, 0),
+          lastRequestAt:
+            items
+              .map((item) => item.finishedAt)
+              .sort((left, right) => right.localeCompare(left))[0] ?? undefined,
+        };
+      })
+      .sort((left, right) => {
+        if (right.totalCostCny !== left.totalCostCny) {
+          return right.totalCostCny - left.totalCostCny;
+        }
+        return right.requestCount - left.requestCount;
+      });
   }
 
   listBillingFeed(workspaceId: string) {
