@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小懒布 Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <div class="ambient ambient-c"></div>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">小</div>
+          <div>
+            <div class="brand-title">小懒布</div>
+            <div class="brand-subtitle">你的 AI 助手，已经准备好上班。</div>
+          </div>
+        </div>
+
+        <div class="persona-card">
+          <div class="persona-art">
+            <div class="persona-core"></div>
+            <div class="persona-ring"></div>
+          </div>
+          <div class="persona-copy">
+            <div class="persona-name">今日状态：轻快待命</div>
+            <div class="persona-sub">云端已连接，本地模式可随时接管。</div>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item is-active" data-view="home">首页</button>
+          <button class="nav-item" data-view="assistant">小懒布</button>
+          <button class="nav-item" data-view="discover">发现</button>
+          <button class="nav-item" data-view="membership">会员</button>
+          <button class="nav-item" data-view="settings">设置</button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="status-card">
+            <div class="status-card__title">今日陪伴</div>
+            <div class="status-row">
+              <span class="status-dot"></span>
+              帮你整理了 14 条消息
+            </div>
+            <div class="status-row">
+              <span class="status-dot"></span>
+              云端托管已开启
+            </div>
+            <div class="status-row">
+              <span class="status-dot"></span>
+              剩余 286 次高级调用
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow" id="topbar-eyebrow">Welcome back</div>
+            <h1 class="page-title" id="page-title">今天想让小懒布帮你完成什么？</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="pill">
+              <span class="pill-dot"></span>
+              云端在线
+            </div>
+            <button class="icon-button" aria-label="Notifications">···</button>
+            <button class="primary-button">开始对话</button>
+          </div>
+        </header>
+
+        <section class="view is-visible" data-view="home">
+          <div class="hero-grid">
+            <article class="hero-card">
+              <div class="eyebrow">Today with Xiaolanbu</div>
+              <h2>像聊天一样自然，像私人助手一样靠谱。</h2>
+              <p>
+                你可以让小懒布帮你回复消息、整理待办、跟进客户、汇总资料，也可以一键切换到云端托管，让它持续在线工作。
+              </p>
+              <div class="hero-actions">
+                <button class="primary-button" data-jump="assistant">立即开始</button>
+                <button class="ghost-button" data-jump="discover">看看能做什么</button>
+              </div>
+              <div class="trust-row">
+                <span class="chip">本地使用</span>
+                <span class="chip">云端托管</span>
+                <span class="chip">多端同步</span>
+                <span class="chip">隐私优先</span>
+              </div>
+            </article>
+
+            <article class="preview-card">
+              <div class="preview-device">
+                <div class="preview-device__header">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="preview-chat">
+                  <div class="preview-msg preview-msg--user">今天帮我把客户回复整理一下，再给我列一份待办。</div>
+                  <div class="preview-msg preview-msg--assistant">
+                    已整理完成。共 17 条重点消息，我按“今天必须处理 / 可延期 / 需要确认”帮你分好了。
+                  </div>
+                </div>
+                <div class="preview-composer">
+                  <div class="preview-composer__input">给小懒布发一句话...</div>
+                  <button class="mini-button">发送</button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="stat-strip">
+            <article class="stat-card">
+              <div class="stat-card__label">已处理对话</div>
+              <div class="stat-card__value">128</div>
+              <div class="stat-card__hint">最近 7 天</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-card__label">自动任务</div>
+              <div class="stat-card__value">6</div>
+              <div class="stat-card__hint">每天按时执行</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-card__label">云端状态</div>
+              <div class="stat-card__value">稳定</div>
+              <div class="stat-card__hint">无需自己盯着服务器</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-card__label">会员额度</div>
+              <div class="stat-card__value">78%</div>
+              <div class="stat-card__hint">本月仍很充足</div>
+            </article>
+          </div>
+
+          <div class="home-grid">
+            <article class="card task-card">
+              <div class="card-heading">
+                <div>
+                  <div class="card-title">快速开始</div>
+                  <div class="card-subtitle">第一次使用时，不要让用户碰到任何技术术语。</div>
+                </div>
+              </div>
+              <div class="action-grid">
+                <button class="action-tile" data-jump="assistant">
+                  <strong>新建对话</strong>
+                  <span>把想法直接告诉小懒布</span>
+                </button>
+                <button class="action-tile">
+                  <strong>整理消息</strong>
+                  <span>把今天收到的内容汇总成待办</span>
+                </button>
+                <button class="action-tile">
+                  <strong>开启云端托管</strong>
+                  <span>让助手在你离开时也能继续处理任务</span>
+                </button>
+                <button class="action-tile" data-jump="discover">
+                  <strong>连接渠道</strong>
+                  <span>接入常用平台，统一管理</span>
+                </button>
+              </div>
+            </article>
+
+            <article class="card moments-card">
+              <div class="card-heading">
+                <div>
+                  <div class="card-title">最近发生了什么</div>
+                  <div class="card-subtitle">面向用户讲成果，不讲底层资源。</div>
+                </div>
+              </div>
+              <div class="moments">
+                <div class="moment">
+                  <div class="moment__time">09:12</div>
+                  <div>
+                    <div class="moment__title">帮你整理了早上的客户消息</div>
+                    <div class="moment__sub">提炼出 5 条待办，已按优先级排序。</div>
+                  </div>
+                </div>
+                <div class="moment">
+                  <div class="moment__time">11:48</div>
+                  <div>
+                    <div class="moment__title">云端模式继续值守</div>
+                    <div class="moment__sub">你不在线时，自动完成了 2 个例行任务。</div>
+                  </div>
+                </div>
+                <div class="moment">
+                  <div class="moment__time">14:30</div>
+                  <div>
+                    <div class="moment__title">发现一个更快的回复模板</div>
+                    <div class="moment__sub">已为你准备好，下次一键复用。</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-view="assistant">
+          <div class="assistant-layout">
+            <article class="card assistant-sidecard">
+              <div class="card-title">今天的助手模式</div>
+              <div class="mode-pill mode-pill--warm">轻松陪跑</div>
+              <div class="card-subtitle">更像一个每天都在线的搭子，而不是冷冰冰的控制台。</div>
+
+              <div class="mini-stack">
+                <div class="mini-stack__item">
+                  <strong>推荐操作</strong>
+                  <span>让小懒布先帮你总结今天的消息和待办。</span>
+                </div>
+                <div class="mini-stack__item">
+                  <strong>云端状态</strong>
+                  <span>已托管，离线时也能继续处理自动任务。</span>
+                </div>
+                <div class="mini-stack__item">
+                  <strong>隐私模式</strong>
+                  <span>需要时可一键切回本地使用。</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="chat-surface">
+              <div class="chat-toolbar">
+                <div>
+                  <div class="chat-toolbar__title">与小懒布对话</div>
+                  <div class="chat-toolbar__sub">自然提问，自然交代任务。</div>
+                </div>
+                <div class="chat-toolbar__actions">
+                  <button class="ghost-button small">新会话</button>
+                  <button class="ghost-button small">语音输入</button>
+                </div>
+              </div>
+
+              <div class="chat-stream">
+                <div class="bubble bubble--assistant">
+                  早安，我已经帮你把今天早上收到的消息扫了一遍。要不要我先按“客户 / 团队 / 个人”分成三类？
+                </div>
+                <div class="bubble bubble--user">
+                  可以，然后把最紧急的三件事单独列出来。
+                </div>
+                <div class="bubble bubble--assistant">
+                  好的，目前最紧急的是：
+                  <br />1. 回复 A 客户报价确认
+                  <br />2. 跟进 B 项目交付时间
+                  <br />3. 处理团队今日排期变更
+                </div>
+              </div>
+
+              <div class="composer">
+                <div class="composer-input">输入一句话，比如：帮我回顾今天的工作进展</div>
+                <button class="primary-button small-cta">发送</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-view="discover">
+          <div class="discover-grid">
+            <article class="feature-card feature-card--sun">
+              <div class="feature-card__icon">✦</div>
+              <div class="feature-card__title">消息整理</div>
+              <div class="feature-card__text">自动汇总聊天内容，提炼重点、待办和下一步。</div>
+            </article>
+            <article class="feature-card feature-card--mint">
+              <div class="feature-card__icon">◎</div>
+              <div class="feature-card__title">云端值守</div>
+              <div class="feature-card__text">你不在线时，小懒布也能继续执行计划内任务。</div>
+            </article>
+            <article class="feature-card feature-card--peach">
+              <div class="feature-card__icon">↗</div>
+              <div class="feature-card__title">多端同步</div>
+              <div class="feature-card__text">在桌面上开始，在云端继续，在手机上接上进度。</div>
+            </article>
+          </div>
+
+          <div class="discover-list">
+            <article class="card list-card">
+              <div class="card-heading">
+                <div>
+                  <div class="card-title">小懒布能帮你做什么</div>
+                  <div class="card-subtitle">这里讲场景和结果，不讲底层架构。</div>
+                </div>
+              </div>
+              <div class="scene-list">
+                <div class="scene-item">
+                  <strong>商务跟进</strong>
+                  <span>整理客户消息、跟进节奏、提炼回复建议。</span>
+                </div>
+                <div class="scene-item">
+                  <strong>个人效率</strong>
+                  <span>把碎片信息变成今天能执行的待办。</span>
+                </div>
+                <div class="scene-item">
+                  <strong>内容整理</strong>
+                  <span>长文、会议纪要、聊天记录，一键总结成重点。</span>
+                </div>
+                <div class="scene-item">
+                  <strong>轻托管</strong>
+                  <span>需要持续在线时，开启云端模式就好。</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="card list-card accent-panel">
+              <div class="card-title">本地还是云端？</div>
+              <div class="card-subtitle">用户只需要理解使用感受，不需要理解技术细节。</div>
+              <div class="compare-grid">
+                <div class="compare-block">
+                  <div class="compare-block__title">本地使用</div>
+                  <div class="compare-block__text">更适合重视隐私、喜欢所有内容都留在自己设备上的用户。</div>
+                </div>
+                <div class="compare-block">
+                  <div class="compare-block__title">云端托管</div>
+                  <div class="compare-block__text">更适合希望小懒布 24 小时在线、离开电脑也能继续工作的用户。</div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-view="membership">
+          <div class="membership-hero">
+            <div>
+              <div class="eyebrow">Membership</div>
+              <h2>先给用户清晰的价值，再给价格。</h2>
+              <p>
+                小懒布会员不卖复杂的技术参数，只卖更省心、更持续在线、更高级的使用体验。
+              </p>
+            </div>
+            <button class="primary-button">升级会员</button>
+          </div>
+
+          <div class="plan-grid">
+            <article class="plan-card">
+              <div class="plan-card__top">
+                <div class="plan-name">轻享版</div>
+                <div class="plan-price">¥29<span>/月</span></div>
+              </div>
+              <div class="plan-list">
+                <div>适合刚开始体验</div>
+                <div>基础对话与整理能力</div>
+                <div>少量高级调用</div>
+              </div>
+              <button class="ghost-button">当前方案</button>
+            </article>
+
+            <article class="plan-card plan-card--featured">
+              <div class="plan-badge">最受欢迎</div>
+              <div class="plan-card__top">
+                <div class="plan-name">陪跑版</div>
+                <div class="plan-price">¥99<span>/月</span></div>
+              </div>
+              <div class="plan-list">
+                <div>持续在线的云端托管</div>
+                <div>更多高级模型额度</div>
+                <div>自动任务与多端同步</div>
+              </div>
+              <button class="primary-button">升级到陪跑版</button>
+            </article>
+
+            <article class="plan-card">
+              <div class="plan-card__top">
+                <div class="plan-name">专业版</div>
+                <div class="plan-price">¥299<span>/月</span></div>
+              </div>
+              <div class="plan-list">
+                <div>更高额度与更强性能</div>
+                <div>适合重度使用者</div>
+                <div>优先体验新功能</div>
+              </div>
+              <button class="ghost-button">了解更多</button>
+            </article>
+          </div>
+
+          <article class="card balance-card">
+            <div class="card-heading">
+              <div>
+                <div class="card-title">你的会员状态</div>
+                <div class="card-subtitle">即使讲用量，也要像会员中心，不像技术审计面板。</div>
+              </div>
+            </div>
+            <div class="balance-grid">
+              <div>
+                <div class="balance-label">剩余高级调用</div>
+                <div class="balance-value">286 次</div>
+              </div>
+              <div>
+                <div class="balance-label">云端托管</div>
+                <div class="balance-value">已开启</div>
+              </div>
+              <div>
+                <div class="balance-label">下次续费</div>
+                <div class="balance-value">4 月 9 日</div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" data-view="settings">
+          <div class="settings-layout">
+            <article class="card settings-card">
+              <div class="card-heading">
+                <div>
+                  <div class="card-title">使用方式</div>
+                  <div class="card-subtitle">把“本地 / 云端”变成用户能理解的语言。</div>
+                </div>
+              </div>
+              <div class="toggle-group">
+                <div class="toggle-item is-selected">
+                  <div>
+                    <strong>优先云端</strong>
+                    <span>离开电脑时，小懒布继续在线。</span>
+                  </div>
+                  <div class="toggle-indicator"></div>
+                </div>
+                <div class="toggle-item">
+                  <div>
+                    <strong>切换到本地</strong>
+                    <span>更适合隐私优先和本机处理。</span>
+                  </div>
+                  <div class="toggle-indicator toggle-indicator--off"></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="card settings-card">
+              <div class="card-heading">
+                <div>
+                  <div class="card-title">偏好设置</div>
+                  <div class="card-subtitle">高级选项可以有，但不要冲到最前面。</div>
+                </div>
+              </div>
+              <div class="pref-list">
+                <div class="pref-row"><span>消息总结风格</span><strong>简洁清晰</strong></div>
+                <div class="pref-row"><span>通知方式</span><strong>桌面提醒</strong></div>
+                <div class="pref-row"><span>数据同步</span><strong>已开启</strong></div>
+                <div class="pref-row"><span>高级与诊断</span><strong>折叠收起</strong></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

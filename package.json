@@ -1,0 +1,16 @@
+{
+  "name": "xiaolanbu",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Xiaolanbu commercial desktop shell",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "api:dev": "npm --prefix apps/api run dev",
+    "api:build": "npm --prefix apps/api run build",
+    "api:start": "npm --prefix apps/api run start",
+    "desktop:start": "npm --prefix apps/desktop start",
+    "desktop:preview": "npm --prefix apps/desktop run preview"
+  }
+}

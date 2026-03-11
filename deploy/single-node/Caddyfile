@@ -1,0 +1,18 @@
+{
+  auto_https off
+  email {$CADDY_ADMIN_EMAIL}
+}
+
+http://{$SERVER_IP} {
+  handle_path /api/* {
+    reverse_proxy api:3030
+  }
+
+  handle_path /v1/* {
+    reverse_proxy litellm:4000
+  }
+
+  handle {
+    respond "xiaolanbu gateway is running" 200
+  }
+}

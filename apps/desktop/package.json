@@ -1,0 +1,27 @@
+{
+  "name": "@xiaolanbu/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Xiaolanbu desktop shell",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 4177",
+    "dev:electron": "wait-on tcp:4177 && cross-env XLB_DEV_URL=http://127.0.0.1:4177 electron .",
+    "build": "vite build --outDir app-dist",
+    "start": "npm run build && electron .",
+    "preview": "vite preview --host 127.0.0.1 --port 4177"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.1.5",
+    "vite": "^6.2.1",
+    "wait-on": "^8.0.3"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
