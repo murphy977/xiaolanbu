@@ -17,6 +17,8 @@ import {
   WalletTransactionRecord,
   WorkspaceMembershipRecord,
   WorkspaceRecord,
+  WorkspaceMemberViewRecord,
+  WorkspaceViewRecord,
 } from "./models";
 import { PostgresStateService } from "./postgres-state.service";
 
@@ -354,12 +356,14 @@ export class StoreService implements OnModuleInit {
     }
 
     const publicUser = this.toUserRecord(user);
-    const workspaces = this.listUserWorkspaces(user.id);
+    const workspaces = this.listUserWorkspaceViews(user.id);
     return {
       user: publicUser,
       workspaces,
       currentWorkspace:
         workspaces.find((item) => item.id === publicUser.activeWorkspaceId) ?? workspaces[0] ?? null,
+      currentWorkspaceRole:
+        this.getWorkspaceMembership(user.id, publicUser.activeWorkspaceId)?.role ?? null,
     };
   }
 
@@ -475,6 +479,13 @@ export class StoreService implements OnModuleInit {
     return this.workspaces.filter((item) => workspaceIds.has(item.id));
   }
 
+  listUserWorkspaceViews(userId: string): WorkspaceViewRecord[] {
+    return this.listUserWorkspaces(userId).map((workspace) => ({
+      ...workspace,
+      role: this.getWorkspaceMembership(userId, workspace.id)?.role ?? "member",
+    }));
+  }
+
   assertUserHasWorkspaceAccess(userId: string, workspaceId: string) {
     const targetWorkspace = this.listUserWorkspaces(userId).find((item) => item.id === workspaceId);
     if (!targetWorkspace) {
@@ -487,6 +498,34 @@ export class StoreService implements OnModuleInit {
     return this.workspaceMembers.find(
       (item) => item.userId === userId && item.workspaceId === workspaceId,
     ) ?? null;
+  }
+
+  listWorkspaceMembers(workspaceId: string): WorkspaceMemberViewRecord[] {
+    this.getWorkspace(workspaceId);
+
+    return this.workspaceMembers
+      .filter((item) => item.workspaceId === workspaceId)
+      .map((item) => {
+        const user = this.users.find((candidate) => candidate.id === item.userId);
+        if (!user) {
+          throw new NotFoundException(`User ${item.userId} not found`);
+        }
+
+        return {
+          id: item.id,
+          userId: item.userId,
+          workspaceId: item.workspaceId,
+          role: item.role,
+          createdAt: item.createdAt,
+          user: this.toUserRecord(user),
+        };
+      })
+      .sort((left, right) => {
+        if (left.role !== right.role) {
+          return left.role === "owner" ? -1 : 1;
+        }
+        return left.user.displayName.localeCompare(right.user.displayName, "zh-CN");
+      });
   }
 
   assertUserCanManageWorkspace(userId: string, workspaceId: string) {
@@ -534,6 +573,43 @@ export class StoreService implements OnModuleInit {
     }
 
     return this.toUserRecord(user);
+  }
+
+  async addWorkspaceMemberByEmail(input: {
+    currentUserId: string;
+    workspaceId: string;
+    email: string;
+    role?: "owner" | "member";
+  }) {
+    this.assertUserCanManageWorkspace(input.currentUserId, input.workspaceId);
+
+    const normalizedEmail = input.email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new NotFoundException("请先填写成员邮箱");
+    }
+
+    const user = this.users.find((item) => item.email.toLowerCase() === normalizedEmail);
+    if (!user) {
+      throw new NotFoundException("该邮箱尚未注册小懒布账号");
+    }
+
+    const existing = this.getWorkspaceMembership(user.id, input.workspaceId);
+    if (existing) {
+      throw new ForbiddenException("该成员已经在当前工作区中");
+    }
+
+    const membership: WorkspaceMembershipRecord = {
+      id: `wsm_${Date.now()}_${this.workspaceMembers.length + 1}`,
+      userId: user.id,
+      workspaceId: input.workspaceId,
+      role: input.role ?? "member",
+      createdAt: new Date().toISOString(),
+    };
+
+    this.workspaceMembers.unshift(membership);
+    await this.postgresStateService.upsertWorkspaceMember(membership);
+
+    return this.listWorkspaceMembers(input.workspaceId);
   }
 
   getWorkspace(workspaceId: string) {
@@ -878,8 +954,10 @@ export class StoreService implements OnModuleInit {
       user: this.toUserRecord(user),
       activeWorkspaceId: user.activeWorkspaceId,
       currentWorkspace:
-        this.listUserWorkspaces(user.id).find((item) => item.id === user.activeWorkspaceId) ?? null,
-      workspaces: this.listUserWorkspaces(user.id),
+        this.listUserWorkspaceViews(user.id).find((item) => item.id === user.activeWorkspaceId) ?? null,
+      currentWorkspaceRole:
+        this.getWorkspaceMembership(user.id, user.activeWorkspaceId)?.role ?? null,
+      workspaces: this.listUserWorkspaceViews(user.id),
     };
   }
 

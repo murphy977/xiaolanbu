@@ -814,6 +814,7 @@ function MembershipView({
 
 function SettingsView({
   deployments,
+  members,
   wallet,
   syncing,
   onRefresh,
@@ -835,11 +836,17 @@ function SettingsView({
   onCopyText,
   actionPendingId,
   onDeploymentAction,
+  memberInviteEmail,
+  memberInvitePending,
+  memberInviteError,
+  onMemberInviteEmailChange,
+  onMemberInvite,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
   const activeActionDeployment = actionPendingId
     ? deployments.find((item) => item.id === actionPendingId)
     : null;
+  const currentWorkspaceRole = activeWorkspace?.role ?? "member";
 
   return (
     <section className="view view--settings is-visible">
@@ -1077,6 +1084,75 @@ function SettingsView({
         <article className="card settings-card">
           <div className="card-heading">
             <div>
+              <div className="card-title">工作区成员</div>
+              <div className="card-subtitle">
+                当前角色：{currentWorkspaceRole === "owner" ? "拥有者" : "成员"}。让团队成员共享实例、账单和控制入口，但权限边界仍然清晰。
+              </div>
+            </div>
+          </div>
+          <div className="member-list">
+            {(members.length
+              ? members
+              : [
+                  {
+                    id: "empty",
+                    role: "member",
+                    createdAt: new Date().toISOString(),
+                    user: {
+                      displayName: "暂无成员",
+                      email: "邀请现有用户后会出现在这里",
+                    },
+                  },
+                ]).map((member) => (
+              <div className="member-item" key={member.id}>
+                <div className="member-item__main">
+                  <div className="member-item__title">
+                    <strong>{member.user.displayName}</strong>
+                    <span
+                      className={`deployment-badge ${member.role === "owner" ? "is-running" : ""}`}
+                    >
+                      {member.role === "owner" ? "owner" : "member"}
+                    </span>
+                  </div>
+                  <div className="member-item__meta">
+                    {member.user.email} · 加入于 {formatDateTime(member.createdAt)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {currentWorkspaceRole === "owner" ? (
+            <div className="member-invite">
+              <label className="field">
+                <span>按邮箱邀请现有用户</span>
+                <input
+                  type="email"
+                  value={memberInviteEmail}
+                  onChange={(event) => onMemberInviteEmailChange(event.target.value)}
+                  placeholder="例如：teammate@xiaolanbu.app"
+                />
+              </label>
+              <div className="result-actions">
+                <button
+                  className="primary-button small"
+                  onClick={onMemberInvite}
+                  disabled={memberInvitePending}
+                >
+                  {memberInvitePending ? "邀请中..." : "加入工作区"}
+                </button>
+              </div>
+              {memberInviteError ? (
+                <div className="inline-notice inline-notice--error">{memberInviteError}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="section-note">当前账号是成员角色，只能查看成员列表，不能邀请其他人加入。</div>
+          )}
+        </article>
+
+        <article className="card settings-card">
+          <div className="card-heading">
+            <div>
               <div className="card-title">当前实例</div>
               <div className="card-subtitle">看看现在有哪些云端实例、它们是否在线，以及控制入口在哪里。</div>
             </div>
@@ -1228,19 +1304,23 @@ export function App() {
     usageSummary: null,
     deploymentSummaries: [],
     deployments: [],
+    members: [],
     transactions: [],
     loading: true,
     syncing: false,
     topupPending: false,
+    memberInvitePending: false,
     createPending: false,
     actionPendingId: null,
     actionPendingType: "",
     error: "",
+    memberInviteError: "",
     createError: "",
     createResult: null,
     createDiagnostics: [],
     createFeedback: "",
   });
+  const [memberInviteEmail, setMemberInviteEmail] = useState("");
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
   const activeWorkspace =
@@ -1302,13 +1382,21 @@ export function App() {
         await fetchJson(`/billing/workspaces/${workspaceId}/sync`, { method: "POST" });
       }
 
-      const [walletResult, usageResult, summaryResult, transactionsResult, deploymentsResult] =
+      const [
+        walletResult,
+        usageResult,
+        summaryResult,
+        transactionsResult,
+        deploymentsResult,
+        membersResult,
+      ] =
         await Promise.all([
           fetchJson(`/billing/workspaces/${workspaceId}/wallet`),
           fetchJson(`/billing/workspaces/${workspaceId}/usage?period=today`),
           fetchJson(`/billing/workspaces/${workspaceId}/deployments/summary?period=today`),
           fetchJson(`/billing/workspaces/${workspaceId}/transactions?limit=8`),
           fetchJson(`/deployments?workspaceId=${encodeURIComponent(workspaceId)}`),
+          fetchJson(`/workspaces/${workspaceId}/members`),
         ]);
 
       startTransition(() => {
@@ -1319,9 +1407,11 @@ export function App() {
           deploymentSummaries: summaryResult.items ?? [],
           transactions: transactionsResult.items ?? [],
           deployments: deploymentsResult.items ?? [],
+          members: membersResult.items ?? [],
           loading: false,
           syncing: false,
           error: "",
+          memberInviteError: "",
         }));
       });
     } catch (error) {
@@ -1403,13 +1493,16 @@ export function App() {
         usageSummary: null,
         deploymentSummaries: [],
         deployments: [],
+        members: [],
         transactions: [],
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
         error: "",
+        memberInviteError: "",
         createError: "",
       }));
+      setMemberInviteEmail("");
     } catch (error) {
       setAuthState((current) => ({
         ...current,
@@ -1545,15 +1638,18 @@ export function App() {
       usageSummary: null,
       deploymentSummaries: [],
       deployments: [],
+      members: [],
       transactions: [],
       loading: false,
       syncing: false,
       error: "",
+      memberInviteError: "",
       createError: "",
       createResult: null,
       createDiagnostics: [],
       createFeedback: "",
     }));
+    setMemberInviteEmail("");
   };
 
   const handleTopup = async (amount) => {
@@ -1795,6 +1891,58 @@ export function App() {
     }
   };
 
+  const handleMemberInvite = async () => {
+    if (!activeWorkspaceId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        memberInviteError: "当前没有可用工作区，请稍后再试。",
+      }));
+      return;
+    }
+
+    if (!memberInviteEmail.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        memberInviteError: "请先填写要邀请的成员邮箱。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      memberInvitePending: true,
+      memberInviteError: "",
+      createFeedback: "",
+    }));
+
+    try {
+      const result = await fetchJson(`/workspaces/${activeWorkspaceId}/members`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: memberInviteEmail.trim(),
+          role: "member",
+        }),
+      });
+
+      setMemberInviteEmail("");
+      setWorkspaceState((current) => ({
+        ...current,
+        memberInvitePending: false,
+        members: result.items ?? current.members,
+        createFeedback: "成员已加入当前工作区。",
+      }));
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        memberInvitePending: false,
+        memberInviteError: error instanceof Error ? error.message : "邀请成员失败，请稍后再试。",
+      }));
+    }
+  };
+
   const operationNotice = workspaceState.createPending
     ? {
         title: "正在创建云端实例",
@@ -1928,6 +2076,7 @@ export function App() {
           {currentView === "settings" ? (
             <SettingsView
               deployments={workspaceState.deployments}
+              members={workspaceState.members}
               wallet={workspaceState.wallet}
               syncing={workspaceState.syncing}
               onRefresh={() => refreshWorkspaceData({ withSync: true })}
@@ -1949,6 +2098,11 @@ export function App() {
               onCopyText={handleCopyText}
               actionPendingId={workspaceState.actionPendingId}
               onDeploymentAction={handleDeploymentAction}
+              memberInviteEmail={memberInviteEmail}
+              memberInvitePending={workspaceState.memberInvitePending}
+              memberInviteError={workspaceState.memberInviteError}
+              onMemberInviteEmailChange={setMemberInviteEmail}
+              onMemberInvite={handleMemberInvite}
             />
           ) : null}
         </main>

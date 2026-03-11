@@ -1454,7 +1454,8 @@ select {
 
 .instance-usage-list,
 .transaction-list,
-.deployment-grid {
+.deployment-grid,
+.member-list {
   display: grid;
   gap: 12px;
   margin-top: 18px;
@@ -1478,7 +1479,8 @@ select {
 .create-instance-types,
 .create-result-card,
 .create-progress-card,
-.create-trace-card {
+.create-trace-card,
+.member-invite {
   display: grid;
   gap: 14px;
 }
@@ -1595,7 +1597,8 @@ select {
 
 .instance-usage-item,
 .transaction-item,
-.deployment-card {
+.deployment-card,
+.member-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1608,7 +1611,8 @@ select {
 
 .instance-usage-item__title,
 .transaction-item__title,
-.deployment-card__head strong {
+.deployment-card__head strong,
+.member-item__title strong {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -1618,7 +1622,8 @@ select {
 .transaction-item__meta,
 .usage-footnote,
 .section-note,
-.deployment-card__rows .pref-row span {
+.deployment-card__rows .pref-row span,
+.member-item__meta {
   color: var(--muted);
 }
 
@@ -1667,6 +1672,26 @@ select {
 .deployment-card {
   align-items: stretch;
   flex-direction: column;
+}
+
+.member-item {
+  align-items: flex-start;
+}
+
+.member-item__main {
+  display: grid;
+  gap: 6px;
+}
+
+.member-item__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-item__meta {
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .deployment-card__head {

@@ -1,6 +1,15 @@
-import { Controller, Get, Headers, Param, UnauthorizedException } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  UnauthorizedException,
+} from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
+import { AddWorkspaceMemberDto } from "./dto/add-workspace-member.dto";
 
 @Controller("workspaces")
 export class WorkspacesController {
@@ -38,6 +47,42 @@ export class WorkspacesController {
       workspace,
       wallet,
       deployments,
+    };
+  }
+
+  @Get(":workspaceId/members")
+  listWorkspaceMembers(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
+
+    return {
+      items: this.storeService.listWorkspaceMembers(workspaceId),
+      currentUserRole:
+        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+    };
+  }
+
+  @Post(":workspaceId/members")
+  async addWorkspaceMember(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken: string | undefined,
+    @Body() body: AddWorkspaceMemberDto,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    const items = await this.storeService.addWorkspaceMemberByEmail({
+      currentUserId: currentUser.id,
+      workspaceId,
+      email: body.email,
+      role: body.role,
+    });
+
+    return {
+      items,
+      currentUserRole:
+        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
     };
   }
 }

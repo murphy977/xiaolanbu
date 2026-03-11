@@ -38,6 +38,19 @@ export interface WorkspaceRecord {
   status: "active" | "trial" | "suspended";
 }
 
+export interface WorkspaceViewRecord extends WorkspaceRecord {
+  role: "owner" | "member";
+}
+
+export interface WorkspaceMemberViewRecord {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  role: "owner" | "member";
+  createdAt: string;
+  user: UserRecord;
+}
+
 export interface DeploymentAccessRecord {
   sshTunnel?: string;
   dashboardUrl?: string;

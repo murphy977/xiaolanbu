@@ -18,6 +18,7 @@ export class AuthController {
       user: context.user,
       activeWorkspaceId: context.user.activeWorkspaceId,
       currentWorkspace: context.currentWorkspace,
+      currentWorkspaceRole: context.currentWorkspaceRole,
       workspaces: context.workspaces,
     };
   }
@@ -57,13 +58,16 @@ export class AuthController {
     }
 
     const user = await this.storeService.setCurrentWorkspaceForUser(authUser.id, workspaceId);
-    const workspaces = this.storeService.listUserWorkspaces(authUser.id);
+    const workspaceViews = this.storeService.listUserWorkspaceViews(authUser.id);
 
     return {
       user,
       activeWorkspaceId: user.activeWorkspaceId,
-      currentWorkspace: workspaces.find((item) => item.id === user.activeWorkspaceId) ?? null,
-      workspaces,
+      currentWorkspace:
+        workspaceViews.find((item) => item.id === user.activeWorkspaceId) ?? null,
+      currentWorkspaceRole:
+        this.storeService.getWorkspaceMembership(authUser.id, user.activeWorkspaceId)?.role ?? null,
+      workspaces: workspaceViews,
     };
   }
 }
