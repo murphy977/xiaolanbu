@@ -1185,6 +1185,13 @@ function SettingsView({
                 </button>
                 <button
                   className="ghost-button small"
+                  onClick={() => onOpenExternal(localBrowserControlUrl)}
+                  disabled={!localBrowserControlUrl}
+                >
+                  打开 Browser Control
+                </button>
+                <button
+                  className="ghost-button small"
                   onClick={() => onCopyText(derivedTunnelCommand, "Tunnel 命令已复制")}
                   disabled={!derivedTunnelCommand}
                 >
@@ -1196,6 +1203,20 @@ function SettingsView({
                   disabled={!localDashboardUrl}
                 >
                   复制控制台地址
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(createPublicIp, "公网 IP 已复制")}
+                  disabled={!createPublicIp}
+                >
+                  复制公网 IP
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(createResult.vendor?.requestId ?? "", "请求编号已复制")}
+                  disabled={!createResult.vendor?.requestId}
+                >
+                  复制请求号
                 </button>
               </div>
               {createFeedback ? <div className="section-note">{createFeedback}</div> : null}
@@ -1420,6 +1441,8 @@ function SettingsView({
             {deployments.map((deployment) => {
               const deploymentPublicIp = deployment.publicIpAddress?.[0] ?? "";
               const deploymentDashboardUrl = deployment.access?.dashboardUrl ?? deployment.consoleUrl ?? "";
+              const deploymentBrowserControlUrl =
+                deployment.mode === "cloud" && deploymentPublicIp ? "http://127.0.0.1:18791/" : deployment.access?.browserControlUrl ?? "";
               const deploymentTunnelCommand = deploymentPublicIp
                 ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
                 : deployment.access?.sshTunnel ?? "";
@@ -1478,10 +1501,24 @@ function SettingsView({
                     </button>
                     <button
                       className="ghost-button small"
+                      onClick={() => onOpenExternal(deploymentBrowserControlUrl)}
+                      disabled={!deploymentBrowserControlUrl}
+                    >
+                      Browser Control
+                    </button>
+                    <button
+                      className="ghost-button small"
                       onClick={() => onCopyText(deploymentTunnelCommand, "Tunnel 命令已复制")}
                       disabled={!deploymentTunnelCommand}
                     >
                       复制 Tunnel
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onCopyText(deploymentPublicIp, "公网 IP 已复制")}
+                      disabled={!deploymentPublicIp}
+                    >
+                      复制公网 IP
                     </button>
                     <button
                       className="ghost-button small"
