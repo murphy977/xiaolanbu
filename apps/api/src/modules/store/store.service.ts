@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 import {
@@ -473,6 +473,29 @@ export class StoreService implements OnModuleInit {
       this.workspaceMembers.filter((item) => item.userId === userId).map((item) => item.workspaceId),
     );
     return this.workspaces.filter((item) => workspaceIds.has(item.id));
+  }
+
+  assertUserHasWorkspaceAccess(userId: string, workspaceId: string) {
+    const targetWorkspace = this.listUserWorkspaces(userId).find((item) => item.id === workspaceId);
+    if (!targetWorkspace) {
+      throw new ForbiddenException(`Workspace ${workspaceId} is not accessible for user ${userId}`);
+    }
+    return targetWorkspace;
+  }
+
+  listDeploymentsForUser(userId: string, workspaceId?: string) {
+    const accessibleWorkspaceIds = new Set(this.listUserWorkspaces(userId).map((item) => item.id));
+    if (workspaceId) {
+      this.assertUserHasWorkspaceAccess(userId, workspaceId);
+      return this.deployments.filter((item) => item.workspaceId === workspaceId);
+    }
+    return this.deployments.filter((item) => accessibleWorkspaceIds.has(item.workspaceId));
+  }
+
+  getDeploymentForUser(userId: string, deploymentId: string) {
+    const deployment = this.getDeployment(deploymentId);
+    this.assertUserHasWorkspaceAccess(userId, deployment.workspaceId);
+    return deployment;
   }
 
   async setCurrentWorkspaceForUser(userId: string, workspaceId: string) {

@@ -1,22 +1,54 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UnauthorizedException,
+} from "@nestjs/common";
 
 import { CreateDeploymentDto } from "./dto/create-deployment.dto";
 import { UpdateDeploymentStatusDto } from "./dto/update-deployment-status.dto";
 import { DeploymentsService } from "./deployments.service";
+import { StoreService } from "../store/store.service";
 
 @Controller("deployments")
 export class DeploymentsController {
-  constructor(private readonly deploymentsService: DeploymentsService) {}
+  constructor(
+    private readonly deploymentsService: DeploymentsService,
+    private readonly storeService: StoreService,
+  ) {}
+
+  private requireUser(sessionToken?: string) {
+    const user = this.storeService.getUserBySessionToken(sessionToken);
+    if (!user) {
+      throw new UnauthorizedException("请先登录");
+    }
+    return user;
+  }
 
   @Get()
-  listDeployments(@Query("workspaceId") workspaceId?: string) {
+  listDeployments(
+    @Query("workspaceId") workspaceId?: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
     return {
-      items: this.deploymentsService.listDeployments(workspaceId),
+      items: this.storeService.listDeploymentsForUser(currentUser.id, workspaceId),
     };
   }
 
   @Post()
-  async createDeployment(@Body() body: CreateDeploymentDto) {
+  async createDeployment(
+    @Body() body: CreateDeploymentDto,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, body.workspaceId);
     return this.deploymentsService.createDeployment(body);
   }
 
@@ -24,29 +56,52 @@ export class DeploymentsController {
   async updateDeploymentStatus(
     @Param("deploymentId") deploymentId: string,
     @Body() body: UpdateDeploymentStatusDto,
+    @Headers("x-xlb-session") sessionToken?: string,
   ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
     return {
       deployment: await this.deploymentsService.updateDeploymentStatus(deploymentId, body.status),
     };
   }
 
   @Post(":deploymentId/start")
-  async startDeployment(@Param("deploymentId") deploymentId: string) {
+  async startDeployment(
+    @Param("deploymentId") deploymentId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
     return this.deploymentsService.startDeployment(deploymentId);
   }
 
   @Post(":deploymentId/stop")
-  async stopDeployment(@Param("deploymentId") deploymentId: string) {
+  async stopDeployment(
+    @Param("deploymentId") deploymentId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
     return this.deploymentsService.stopDeployment(deploymentId);
   }
 
   @Post(":deploymentId/restart")
-  async restartDeployment(@Param("deploymentId") deploymentId: string) {
+  async restartDeployment(
+    @Param("deploymentId") deploymentId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
     return this.deploymentsService.restartDeployment(deploymentId);
   }
 
   @Delete(":deploymentId")
-  async destroyDeployment(@Param("deploymentId") deploymentId: string) {
+  async destroyDeployment(
+    @Param("deploymentId") deploymentId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
     return this.deploymentsService.destroyDeployment(deploymentId);
   }
 }

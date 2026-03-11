@@ -177,21 +177,11 @@ export class PostgresStateService implements OnModuleDestroy {
   }
 
   async upsertDeployment(record: DeploymentRecord) {
-    await this.upsertJson(
-      "xlb_deployments",
-      record.id,
-      record.workspaceId,
-      record,
-    );
+    await this.upsertScopedJson("xlb_deployments", "workspace_id", record.id, record.workspaceId, record);
   }
 
   async upsertWallet(record: WalletRecord) {
-    await this.upsertJson(
-      "xlb_wallets",
-      record.id,
-      record.workspaceId,
-      record,
-    );
+    await this.upsertScopedJson("xlb_wallets", "workspace_id", record.id, record.workspaceId, record);
   }
 
   async insertUsageLedger(record: UsageLedgerRecord) {
@@ -256,11 +246,17 @@ export class PostgresStateService implements OnModuleDestroy {
   }
 
   async upsertUser(record: AuthUserRecord) {
-    await this.upsertJson("xlb_users", record.id, record.id, record);
+    await this.upsertDataOnlyJson("xlb_users", record.id, record);
   }
 
   async upsertWorkspace(record: WorkspaceRecord) {
-    await this.upsertJson("xlb_workspaces_catalog", record.id, record.ownerUserId, record);
+    await this.upsertScopedJson(
+      "xlb_workspaces_catalog",
+      "owner_user_id",
+      record.id,
+      record.ownerUserId,
+      record,
+    );
   }
 
   async upsertWorkspaceMember(record: WorkspaceMembershipRecord) {
@@ -321,10 +317,11 @@ export class PostgresStateService implements OnModuleDestroy {
     return result.rows[0]?.data ?? null;
   }
 
-  private async upsertJson(
-    tableName: "xlb_deployments" | "xlb_wallets" | "xlb_users" | "xlb_workspaces_catalog",
+  private async upsertScopedJson(
+    tableName: "xlb_deployments" | "xlb_wallets" | "xlb_workspaces_catalog",
+    scopeColumn: "workspace_id" | "owner_user_id",
     id: string,
-    workspaceId: string,
+    scopeValue: string,
     data: unknown,
   ) {
     if (!this.pool) {
@@ -333,12 +330,32 @@ export class PostgresStateService implements OnModuleDestroy {
 
     await this.pool.query(
       `
-        INSERT INTO ${tableName} (id, workspace_id, updated_at, data)
+        INSERT INTO ${tableName} (id, ${scopeColumn}, updated_at, data)
         VALUES ($1, $2, NOW(), $3::jsonb)
         ON CONFLICT (id)
-        DO UPDATE SET workspace_id = EXCLUDED.workspace_id, data = EXCLUDED.data, updated_at = NOW()
+        DO UPDATE SET ${scopeColumn} = EXCLUDED.${scopeColumn}, data = EXCLUDED.data, updated_at = NOW()
       `,
-      [id, workspaceId, JSON.stringify(data)],
+      [id, scopeValue, JSON.stringify(data)],
+    );
+  }
+
+  private async upsertDataOnlyJson(
+    tableName: "xlb_users",
+    id: string,
+    data: unknown,
+  ) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        INSERT INTO ${tableName} (id, email, updated_at, data)
+        VALUES ($1, ($2::jsonb->>'email'), NOW(), $2::jsonb)
+        ON CONFLICT (id)
+        DO UPDATE SET email = EXCLUDED.email, data = EXCLUDED.data, updated_at = NOW()
+      `,
+      [id, JSON.stringify(data)],
     );
   }
 }

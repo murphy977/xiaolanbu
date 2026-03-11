@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Controller, Get, Headers, Param, UnauthorizedException } from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
 
@@ -6,17 +6,30 @@ import { StoreService } from "../store/store.service";
 export class WorkspacesController {
   constructor(private readonly storeService: StoreService) {}
 
+  private requireUser(sessionToken?: string) {
+    const user = this.storeService.getUserBySessionToken(sessionToken);
+    if (!user) {
+      throw new UnauthorizedException("请先登录");
+    }
+    return user;
+  }
+
   @Get()
-  listWorkspaces() {
-    const currentUser = this.storeService.getCurrentUser();
+  listWorkspaces(@Headers("x-xlb-session") sessionToken?: string) {
+    const currentUser = this.requireUser(sessionToken);
     return {
       activeWorkspaceId: currentUser.activeWorkspaceId,
-      items: this.storeService.listWorkspaces(),
+      items: this.storeService.listUserWorkspaces(currentUser.id),
     };
   }
 
   @Get(":workspaceId")
-  getWorkspace(@Param("workspaceId") workspaceId: string) {
+  getWorkspace(
+    @Param("workspaceId") workspaceId: string,
+    @Headers("x-xlb-session") sessionToken?: string,
+  ) {
+    const currentUser = this.requireUser(sessionToken);
+    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
     const workspace = this.storeService.getWorkspace(workspaceId);
     const wallet = this.storeService.getWallet(workspaceId);
     const deployments = this.storeService.listDeployments(workspaceId);
