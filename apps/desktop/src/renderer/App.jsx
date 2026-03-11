@@ -180,7 +180,9 @@ async function fetchJson(path, options) {
   const data = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new Error(data?.message || `Request failed: ${response.status}`);
+    const error = new Error(data?.message || `Request failed: ${response.status}`);
+    error.details = data;
+    throw error;
   }
 
   return data;
@@ -714,6 +716,7 @@ function SettingsView({
   createPending,
   createError,
   createResult,
+  createDiagnostics,
   onCreate,
   createFeedback,
   operationNotice,
@@ -846,6 +849,27 @@ function SettingsView({
                   <strong>启动 OpenClaw 网关</strong>
                   <span>实例准备好后会自动生成 SSH Tunnel 和控制台地址。</span>
                 </div>
+              </div>
+            </div>
+          ) : null}
+
+          {createDiagnostics?.length ? (
+            <div className="create-trace-card">
+              <div className="create-section-title">规格尝试轨迹</div>
+              <div className="trace-list">
+                {createDiagnostics.map((item, index) => (
+                  <div className="trace-item" key={`${item.instanceType}-${index}`}>
+                    <div className={`trace-item__dot ${item.status === "success" ? "is-success" : "is-error"}`}></div>
+                    <div className="trace-item__copy">
+                      <strong>{item.instanceType}</strong>
+                      <span>
+                        {item.status === "success"
+                          ? `创建成功${item.requestId ? ` · 请求号 ${item.requestId}` : ""}`
+                          : item.message ?? "尝试失败"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}
@@ -1070,6 +1094,7 @@ export function App() {
     error: "",
     createError: "",
     createResult: null,
+    createDiagnostics: [],
     createFeedback: "",
   });
 
@@ -1228,13 +1253,14 @@ export function App() {
       return;
     }
 
-      setWorkspaceState((current) => ({
-        ...current,
-        createPending: true,
-        createError: "",
-        createResult: null,
-        createFeedback: "",
-      }));
+    setWorkspaceState((current) => ({
+      ...current,
+      createPending: true,
+      createError: "",
+      createResult: null,
+      createDiagnostics: [],
+      createFeedback: "",
+    }));
 
     try {
       const result = await fetchJson("/deployments", {
@@ -1265,6 +1291,7 @@ export function App() {
         createPending: false,
         createError: "",
         createResult: result,
+        createDiagnostics: result.deployment?.metadata?.instanceTypeAttempts ?? [],
         createFeedback: result.deployment?.access?.dashboardUrl
           ? "实例已就绪。先运行 SSH Tunnel，再打开控制台地址。"
           : "实例已创建成功。请先查看 SSH Tunnel 和公网信息。",
@@ -1275,6 +1302,7 @@ export function App() {
         ...current,
         createPending: false,
         createError: error instanceof Error ? error.message : "创建实例失败，请稍后再试。",
+        createDiagnostics: error?.details?.attempts ?? [],
         createFeedback: "",
       }));
     }
@@ -1449,6 +1477,7 @@ export function App() {
               createPending={workspaceState.createPending}
               createError={workspaceState.createError}
               createResult={workspaceState.createResult}
+              createDiagnostics={workspaceState.createDiagnostics}
               createFeedback={workspaceState.createFeedback}
               operationNotice={operationNotice}
               onCreate={handleCreateDeployment}

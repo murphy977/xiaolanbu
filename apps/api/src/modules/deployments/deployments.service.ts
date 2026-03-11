@@ -44,6 +44,13 @@ export class DeploymentsService {
     let selectedInstanceType = instanceTypeCandidates[0];
     let vendorResult: Awaited<ReturnType<AliyunEcsService["runInstances"]>> | null = null;
     let lastProvisionError: unknown = null;
+    const instanceTypeAttempts: Array<{
+      instanceType: string;
+      status: "success" | "error";
+      requestId?: string;
+      message?: string;
+      retryable: boolean;
+    }> = [];
 
     for (const instanceType of instanceTypeCandidates) {
       try {
@@ -68,17 +75,30 @@ export class DeploymentsService {
           ],
         });
         selectedInstanceType = instanceType;
+        instanceTypeAttempts.push({
+          instanceType,
+          status: "success",
+          requestId: vendorResult.requestId,
+          retryable: false,
+        });
         break;
       } catch (error) {
         lastProvisionError = error;
-        if (!this.isRetryableInstanceTypeError(error)) {
-          throw error;
+        const retryable = this.isRetryableInstanceTypeError(error);
+        instanceTypeAttempts.push({
+          instanceType,
+          status: "error",
+          message: this.describeProvisioningError(error),
+          retryable,
+        });
+        if (!retryable) {
+          throw this.buildProvisioningException(error, instanceTypeAttempts);
         }
       }
     }
 
     if (!vendorResult) {
-      throw lastProvisionError;
+      throw this.buildProvisioningException(lastProvisionError, instanceTypeAttempts);
     }
 
     if (vendorResult.dryRunPassed) {
@@ -115,6 +135,7 @@ export class DeploymentsService {
         imageId: body.imageId,
         instanceType: selectedInstanceType,
         instanceTypeCandidates,
+        instanceTypeAttempts,
         gatewayTokenId: gatewayProvision?.tokenId,
         gatewayKeyName: gatewayProvision?.keyName,
         gatewayKeyAlias: gatewayProvision?.keyAlias,
@@ -377,6 +398,57 @@ export class DeploymentsService {
       "InvalidResourceType.NotSupported",
       "InvalidInstanceType.NotSupportDiskCategory",
     ].some((pattern) => message.includes(pattern));
+  }
+
+  private describeProvisioningError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes("OperationDenied.NoStock")) {
+      return "当前可用区库存不足";
+    }
+
+    if (message.includes("InvalidResourceType.NotSupported")) {
+      return "当前可用区不支持该实例规格";
+    }
+
+    if (message.includes("InvalidInstanceType.NotSupportDiskCategory")) {
+      return "当前规格与系统盘类型不兼容";
+    }
+
+    if (message.includes("ReadTimeout")) {
+      return "阿里云接口响应超时";
+    }
+
+    return message;
+  }
+
+  private buildProvisioningException(
+    error: unknown,
+    attempts: Array<{
+      instanceType: string;
+      status: "success" | "error";
+      requestId?: string;
+      message?: string;
+      retryable: boolean;
+    }>,
+  ) {
+    const summary = attempts
+      .map((item) =>
+        item.status === "success"
+          ? `${item.instanceType}（成功）`
+          : `${item.instanceType}（${item.message ?? "失败"}）`,
+      )
+      .join(" -> ");
+
+    const fallbackMessage = error instanceof Error ? error.message : "未知错误";
+
+    return new BadRequestException({
+      message: summary
+        ? `实例创建失败，已尝试：${summary}`
+        : `实例创建失败：${fallbackMessage}`,
+      attempts,
+      rawMessage: fallbackMessage,
+    });
   }
 
   private resolveUserData(

@@ -1402,7 +1402,8 @@ select {
 
 .create-instance-types,
 .create-result-card,
-.create-progress-card {
+.create-progress-card,
+.create-trace-card {
   display: grid;
   gap: 14px;
 }
@@ -1431,6 +1432,13 @@ select {
   border-radius: var(--radius-md);
   border: 1px solid rgba(77, 101, 173, 0.12);
   background: linear-gradient(180deg, rgba(248, 250, 255, 0.92), rgba(255, 255, 255, 0.78));
+}
+
+.create-trace-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(31, 34, 39, 0.06);
+  background: rgba(255, 255, 255, 0.66);
 }
 
 .progress-line {
@@ -1464,6 +1472,48 @@ select {
 }
 
 .progress-line__item strong {
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.trace-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trace-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(31, 34, 39, 0.05);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.trace-item__dot {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: rgba(31, 34, 39, 0.16);
+}
+
+.trace-item__dot.is-success {
+  background: var(--mint);
+}
+
+.trace-item__dot.is-error {
+  background: var(--accent);
+}
+
+.trace-item__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.trace-item__copy strong {
   font-size: 14px;
   letter-spacing: -0.02em;
 }
