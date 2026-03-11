@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, clipboard, ipcMain, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -33,6 +33,24 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle("xiaolanbu:open-external", async (_event, targetUrl) => {
+    if (typeof targetUrl !== "string" || !targetUrl.trim()) {
+      return { ok: false };
+    }
+
+    await shell.openExternal(targetUrl);
+    return { ok: true };
+  });
+
+  ipcMain.handle("xiaolanbu:copy-text", (_event, value) => {
+    if (typeof value !== "string") {
+      return { ok: false };
+    }
+
+    clipboard.writeText(value);
+    return { ok: true };
+  });
+
   createWindow();
 
   app.on("activate", () => {

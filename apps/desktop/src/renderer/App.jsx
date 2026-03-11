@@ -127,6 +127,14 @@ const DEFAULT_DEPLOYMENT_FORM = {
   instanceTypes: ["ecs.n1.small", "ecs.n4.small", "ecs.t5-lc1m2.small"],
 };
 
+function getAppBridge() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.xiaolanbu ?? null;
+}
+
 function formatCurrency(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return "--";
@@ -707,6 +715,9 @@ function SettingsView({
   createError,
   createResult,
   onCreate,
+  createFeedback,
+  onOpenExternal,
+  onCopyText,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
 
@@ -824,6 +835,30 @@ function SettingsView({
                   <strong>{createResult.deployment.access.browserControlUrl ?? "--"}</strong>
                 </div>
               </div>
+              <div className="result-actions">
+                <button
+                  className="primary-button small"
+                  onClick={() => onOpenExternal(createResult.deployment.access.dashboardUrl)}
+                  disabled={!createResult.deployment.access.dashboardUrl}
+                >
+                  打开控制台
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(createResult.deployment.access.sshTunnel, "SSH Tunnel 已复制")}
+                  disabled={!createResult.deployment.access.sshTunnel}
+                >
+                  复制 SSH Tunnel
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(createResult.deployment.access.dashboardUrl, "控制台地址已复制")}
+                  disabled={!createResult.deployment.access.dashboardUrl}
+                >
+                  复制控制台地址
+                </button>
+              </div>
+              {createFeedback ? <div className="section-note">{createFeedback}</div> : null}
             </div>
           ) : null}
         </article>
@@ -943,6 +978,7 @@ export function App() {
     error: "",
     createError: "",
     createResult: null,
+    createFeedback: "",
   });
 
   const refreshWorkspaceData = async ({ withSync = false } = {}) => {
@@ -1101,11 +1137,12 @@ export function App() {
     }
 
     setWorkspaceState((current) => ({
-      ...current,
-      createPending: true,
-      createError: "",
-      createResult: null,
-    }));
+        ...current,
+        createPending: true,
+        createError: "",
+        createResult: null,
+        createFeedback: "",
+      }));
 
     try {
       const result = await fetchJson("/deployments", {
@@ -1136,6 +1173,9 @@ export function App() {
         createPending: false,
         createError: "",
         createResult: result,
+        createFeedback: result.deployment?.access?.dashboardUrl
+          ? "实例已就绪。先运行 SSH Tunnel，再打开控制台地址。"
+          : "实例已创建成功。请先查看 SSH Tunnel 和公网信息。",
       }));
       await refreshWorkspaceData({ withSync: true });
     } catch (error) {
@@ -1143,8 +1183,41 @@ export function App() {
         ...current,
         createPending: false,
         createError: error instanceof Error ? error.message : "创建实例失败，请稍后再试。",
+        createFeedback: "",
       }));
     }
+  };
+
+  const handleOpenExternal = async (targetUrl) => {
+    if (!targetUrl) {
+      return;
+    }
+
+    const bridge = getAppBridge();
+    if (bridge?.openExternal) {
+      await bridge.openExternal(targetUrl);
+      return;
+    }
+
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyText = async (value, successMessage) => {
+    if (!value) {
+      return;
+    }
+
+    const bridge = getAppBridge();
+    if (bridge?.copyText) {
+      await bridge.copyText(value);
+    } else if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      createFeedback: successMessage,
+    }));
   };
 
   const meta = VIEW_META[currentView];
@@ -1225,7 +1298,10 @@ export function App() {
               createPending={workspaceState.createPending}
               createError={workspaceState.createError}
               createResult={workspaceState.createResult}
+              createFeedback={workspaceState.createFeedback}
               onCreate={handleCreateDeployment}
+              onOpenExternal={handleOpenExternal}
+              onCopyText={handleCopyText}
             />
           ) : null}
         </main>

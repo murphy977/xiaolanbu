@@ -1386,6 +1386,12 @@ select {
   gap: 14px;
 }
 
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .create-section-title {
   font-size: 13px;
   font-weight: 800;
@@ -1591,7 +1597,8 @@ select {
   .membership-hero,
   .membership-hero__actions,
   .topbar,
-  .chat-toolbar {
+  .chat-toolbar,
+  .result-actions {
     flex-direction: column;
     align-items: stretch;
   }

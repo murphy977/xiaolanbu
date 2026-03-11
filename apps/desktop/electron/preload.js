@@ -1,5 +1,7 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("xiaolanbu", {
   platform: process.platform,
+  openExternal: (targetUrl) => ipcRenderer.invoke("xiaolanbu:open-external", targetUrl),
+  copyText: (value) => ipcRenderer.invoke("xiaolanbu:copy-text", value),
 });
