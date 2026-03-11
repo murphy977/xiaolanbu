@@ -8,7 +8,11 @@ http://{$SERVER_IP} {
     reverse_proxy api:3030
   }
 
-  handle_path /v1/* {
+  handle /v1/* {
+    reverse_proxy litellm:4000
+  }
+
+  handle /key/* {
     reverse_proxy litellm:4000
   }
 

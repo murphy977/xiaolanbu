@@ -23,6 +23,14 @@ export interface DeploymentAccessRecord {
   browserControlUrl?: string;
 }
 
+export interface DeploymentGatewayKeyRecord {
+  tokenId: string;
+  keyName?: string;
+  keyAlias?: string | null;
+  modelId: string;
+  baseUrl: string;
+}
+
 export interface DeploymentRecord {
   id: string;
   workspaceId: string;
@@ -41,6 +49,7 @@ export interface DeploymentRecord {
   zoneId?: string;
   vendorInstanceIds?: string[];
   access?: DeploymentAccessRecord;
+  gatewayKey?: DeploymentGatewayKeyRecord;
   metadata?: Record<string, unknown>;
 }
 

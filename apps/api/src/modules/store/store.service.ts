@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   BillingFeedRecord,
   DeploymentAccessRecord,
+  DeploymentGatewayKeyRecord,
   DeploymentRecord,
   DeploymentStatus,
   UsageSummaryRecord,
@@ -12,6 +13,7 @@ import {
 } from "./models";
 
 interface CreateDeploymentInput {
+  id?: string;
   workspaceId: string;
   name: string;
   mode: "local" | "cloud";
@@ -24,6 +26,7 @@ interface CreateDeploymentInput {
   zoneId?: string;
   vendorInstanceIds?: string[];
   access?: DeploymentAccessRecord;
+  gatewayKey?: DeploymentGatewayKeyRecord;
   metadata?: Record<string, unknown>;
 }
 
@@ -176,7 +179,7 @@ export class StoreService {
     this.getWorkspace(input.workspaceId);
 
     const record: DeploymentRecord = {
-      id: `dep_${Date.now()}`,
+      id: input.id ?? `dep_${Date.now()}`,
       workspaceId: input.workspaceId,
       name: input.name,
       mode: input.mode,
@@ -201,6 +204,7 @@ export class StoreService {
       zoneId: input.zoneId,
       vendorInstanceIds: input.vendorInstanceIds,
       access: input.access,
+      gatewayKey: input.gatewayKey,
       metadata: input.metadata,
     };
 

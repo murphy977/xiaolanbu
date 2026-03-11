@@ -1,6 +1,9 @@
+import { randomBytes } from "node:crypto";
+
 import { BadRequestException, Injectable } from "@nestjs/common";
 
 import { AliyunEcsService } from "../infrastructure/services/aliyun-ecs.service";
+import { LiteLlmProxyService } from "../infrastructure/services/litellm-proxy.service";
 import { StoreService } from "../store/store.service";
 import { CreateDeploymentDto } from "./dto/create-deployment.dto";
 
@@ -9,6 +12,7 @@ export class DeploymentsService {
   constructor(
     private readonly storeService: StoreService,
     private readonly aliyunEcsService: AliyunEcsService,
+    private readonly liteLlmProxyService: LiteLlmProxyService,
   ) {}
 
   listDeployments(workspaceId?: string) {
@@ -25,6 +29,17 @@ export class DeploymentsService {
 
     this.assertAliyunCloudInput(body);
 
+    const deploymentId = this.createDeploymentId();
+    const gatewayProvision =
+      body.dryRun === true
+        ? null
+        : await this.resolveGatewayProvision({
+            deploymentId,
+            workspaceId: body.workspaceId,
+            deploymentName: body.name,
+            requestedModelId: body.openclawModelId,
+          });
+
     const vendorResult = await this.aliyunEcsService.runInstances({
       regionId: body.region!,
       imageId: body.imageId!,
@@ -35,7 +50,7 @@ export class DeploymentsService {
       amount: body.amount,
       dryRun: body.dryRun,
       password: body.password,
-      userData: this.resolveUserData(body),
+      userData: this.resolveUserData(body, gatewayProvision ?? undefined),
       systemDiskCategory: body.systemDiskCategory,
       systemDiskSize: body.systemDiskSize,
       internetMaxBandwidthOut: body.internetMaxBandwidthOut,
@@ -55,12 +70,22 @@ export class DeploymentsService {
     }
 
     const deployment = this.storeService.createDeployment({
+      id: deploymentId,
       workspaceId: body.workspaceId,
       name: body.name,
       mode: body.mode,
       region: body.region,
       provider: "aliyun",
       vendorInstanceIds: vendorResult.instanceIds,
+      gatewayKey: gatewayProvision
+        ? {
+            tokenId: gatewayProvision.tokenId,
+            keyName: gatewayProvision.keyName,
+            keyAlias: gatewayProvision.keyAlias,
+            modelId: gatewayProvision.modelId,
+            baseUrl: gatewayProvision.baseUrl,
+          }
+        : undefined,
       metadata: {
         dryRun: body.dryRun ?? false,
         requestId: vendorResult.requestId,
@@ -68,6 +93,9 @@ export class DeploymentsService {
         tradePrice: vendorResult.tradePrice,
         imageId: body.imageId,
         instanceType: body.instanceType,
+        gatewayTokenId: gatewayProvision?.tokenId,
+        gatewayKeyName: gatewayProvision?.keyName,
+        gatewayKeyAlias: gatewayProvision?.keyAlias,
       },
     });
 
@@ -164,12 +192,25 @@ export class DeploymentsService {
     }
   }
 
-  private resolveUserData(body: CreateDeploymentDto) {
+  private resolveUserData(
+    body: CreateDeploymentDto,
+    gatewayProvision?: {
+      apiKey: string;
+      tokenId: string;
+      keyName?: string;
+      keyAlias?: string | null;
+      baseUrl: string;
+      modelId: string;
+      providerId: string;
+    },
+  ) {
     if (body.userData) {
       return body.userData;
     }
 
-    if (!body.openclawApiKey) {
+    const injectedApiKey = gatewayProvision?.apiKey ?? body.openclawApiKey;
+
+    if (!injectedApiKey) {
       return undefined;
     }
 
@@ -187,15 +228,15 @@ export class DeploymentsService {
       "export LOGNAME=root",
       "export XDG_RUNTIME_DIR=/run/user/0",
       "export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus",
-      `export OPENCLAW_API_KEY='${this.escapeSingleQuoted(body.openclawApiKey)}'`,
+      `export OPENCLAW_API_KEY='${this.escapeSingleQuoted(injectedApiKey)}'`,
       "",
       'echo "[xiaolanbu] bootstrap started at $(date -Is)"',
       'echo "[xiaolanbu] using openclaw-manager at $(command -v openclaw-manager)"',
       "",
       "openclaw-manager init --non-interactive \\",
-      `  --provider-id ${body.openclawProviderId ?? "dashscope"} \\`,
-      `  --base-url ${body.openclawBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"} \\`,
-      `  --model-id ${body.openclawModelId ?? "qwen3.5-plus"} \\`,
+      `  --provider-id ${body.openclawProviderId ?? gatewayProvision?.providerId ?? "dashscope"} \\`,
+      `  --base-url ${body.openclawBaseUrl ?? gatewayProvision?.baseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"} \\`,
+      `  --model-id ${body.openclawModelId ?? gatewayProvision?.modelId ?? "qwen3.5-plus"} \\`,
       `  --gateway-port ${gatewayPort} \\`,
       `  --gateway-bind ${body.openclawGatewayBind ?? "loopback"}`,
       "",
@@ -348,5 +389,56 @@ export class DeploymentsService {
 
   private escapeSingleQuoted(value: string) {
     return value.replace(/'/g, `'\"'\"'`);
+  }
+
+  private createDeploymentId() {
+    return `dep_${Date.now()}${randomBytes(3).toString("hex")}`;
+  }
+
+  private async resolveGatewayProvision(input: {
+    deploymentId: string;
+    workspaceId: string;
+    deploymentName: string;
+    requestedModelId?: string;
+  }) {
+    const baseUrl = this.liteLlmProxyService.getPublicBaseUrl();
+    const internalProxyUrl = this.liteLlmProxyService.getProxyBaseUrl();
+
+    if (!baseUrl || !internalProxyUrl) {
+      return null;
+    }
+
+    const modelId = input.requestedModelId ?? process.env.XLB_GATEWAY_MODEL ?? "qwen35-plus";
+    const keyAlias = `deployment:${input.deploymentId}`;
+    const generated = await this.liteLlmProxyService.generateVirtualKey({
+      models: [modelId],
+      maxBudget: this.resolveGatewayKeyBudget(),
+      keyAlias,
+      metadata: {
+        workspace_id: input.workspaceId,
+        deployment_id: input.deploymentId,
+        deployment_name: input.deploymentName,
+      },
+    });
+
+    return {
+      apiKey: generated.key,
+      tokenId: generated.token,
+      keyName: generated.keyName,
+      keyAlias: generated.keyAlias ?? keyAlias,
+      baseUrl,
+      modelId,
+      providerId: process.env.XLB_GATEWAY_PROVIDER_ID ?? "openai",
+    };
+  }
+
+  private resolveGatewayKeyBudget() {
+    const value = process.env.XLB_GATEWAY_KEY_MAX_BUDGET?.trim();
+    if (!value) {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
 }
