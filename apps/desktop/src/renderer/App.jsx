@@ -212,6 +212,20 @@ async function fetchJson(path, options) {
   if (!response.ok) {
     const error = new Error(data?.message || `Request failed: ${response.status}`);
     error.details = data;
+    error.status = response.status;
+    if (
+      response.status === 401 &&
+      sessionToken &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(
+        new CustomEvent("xiaolanbu:session-expired", {
+          detail: {
+            message: data?.message || "登录状态已失效，请重新登录。",
+          },
+        }),
+      );
+    }
     throw error;
   }
 
@@ -1689,6 +1703,75 @@ export function App() {
         }));
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = (event) => {
+      const nextMessage =
+        event?.detail?.message || "登录状态已失效，请重新登录。";
+
+      setStoredSessionToken("");
+      setAuthState((current) => ({
+        ...current,
+        user: null,
+        workspaces: [],
+        activeWorkspaceId: "",
+        sessionToken: "",
+        loading: false,
+        authPending: false,
+        authMode: "login",
+        authError: nextMessage,
+        authForm: {
+          displayName: "",
+          email: current.user?.email ?? current.authForm?.email ?? "",
+          password: "",
+        },
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        wallet: null,
+        usageSummary: null,
+        deploymentSummaries: [],
+        deployments: [],
+        members: [],
+        transactions: [],
+        loading: false,
+        syncing: false,
+        workspaceCreatePending: false,
+        workspaceRenamePending: false,
+        workspaceDangerPending: false,
+        profilePending: false,
+        passwordPending: false,
+        memberInvitePending: false,
+        memberActionPendingId: null,
+        actionPendingId: null,
+        actionPendingType: "",
+        error: "",
+        workspaceCreateError: "",
+        workspaceRenameError: "",
+        workspaceDangerError: "",
+        profileError: "",
+        passwordError: "",
+        memberInviteError: "",
+        memberActionError: "",
+        createError: "",
+        createResult: null,
+        createDiagnostics: [],
+        createFeedback: "",
+      }));
+      setProfileForm({ displayName: "" });
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setMemberInviteEmail("");
+    };
+
+    window.addEventListener("xiaolanbu:session-expired", handleSessionExpired);
+    return () => {
+      window.removeEventListener("xiaolanbu:session-expired", handleSessionExpired);
+    };
   }, []);
 
   useEffect(() => {
