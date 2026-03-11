@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Body, Controller, Get, Patch } from "@nestjs/common";
 
 import { StoreService } from "../store/store.service";
 
@@ -8,9 +8,26 @@ export class AuthController {
 
   @Get("me")
   getMe() {
+    const user = this.storeService.getCurrentUser();
+    const workspaces = this.storeService.listWorkspaces();
     return {
-      user: this.storeService.getCurrentUser(),
-      workspaces: this.storeService.listWorkspaces(),
+      user,
+      activeWorkspaceId: user.activeWorkspaceId,
+      currentWorkspace: workspaces.find((item) => item.id === user.activeWorkspaceId) ?? null,
+      workspaces,
+    };
+  }
+
+  @Patch("workspace")
+  async setCurrentWorkspace(@Body("workspaceId") workspaceId: string) {
+    const user = await this.storeService.setCurrentWorkspace(workspaceId);
+    const workspaces = this.storeService.listWorkspaces();
+
+    return {
+      user,
+      activeWorkspaceId: user.activeWorkspaceId,
+      currentWorkspace: workspaces.find((item) => item.id === user.activeWorkspaceId) ?? null,
+      workspaces,
     };
   }
 }

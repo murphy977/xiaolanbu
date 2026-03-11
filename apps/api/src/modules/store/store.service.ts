@@ -40,11 +40,12 @@ export class StoreService implements OnModuleInit {
 
   constructor(private readonly postgresStateService: PostgresStateService) {}
 
-  private readonly currentUser: UserRecord = {
+  private currentUser: UserRecord = {
     id: "user_001",
     displayName: "午松",
     email: "owner@xiaolanbu.app",
     avatarInitial: "午",
+    activeWorkspaceId: "ws_main",
   };
 
   private readonly workspaces: WorkspaceRecord[] = [
@@ -54,6 +55,13 @@ export class StoreService implements OnModuleInit {
       name: "小懒布主工作区",
       planName: "陪跑版",
       status: "active",
+    },
+    {
+      id: "ws_team",
+      ownerUserId: "user_001",
+      name: "小懒布团队工作区",
+      planName: "专业版",
+      status: "trial",
     },
   ];
 
@@ -103,6 +111,13 @@ export class StoreService implements OnModuleInit {
       frozenCny: 0,
       currency: "CNY",
     },
+    {
+      id: "wallet_team",
+      workspaceId: "ws_team",
+      balanceCny: 88,
+      frozenCny: 0,
+      currency: "CNY",
+    },
   ];
 
   private readonly usageSummaries: UsageSummaryRecord[] = [
@@ -130,6 +145,22 @@ export class StoreService implements OnModuleInit {
         { model: "claude-3.5-haiku", tokens: 809340, costCny: 83.6 },
       ],
     },
+    {
+      workspaceId: "ws_team",
+      period: "today",
+      requestCount: 0,
+      totalTokens: 0,
+      totalCostCny: 0,
+      topModels: [],
+    },
+    {
+      workspaceId: "ws_team",
+      period: "30d",
+      requestCount: 0,
+      totalTokens: 0,
+      totalCostCny: 0,
+      topModels: [],
+    },
   ];
 
   private readonly billingFeed: BillingFeedRecord[] = [
@@ -156,6 +187,14 @@ export class StoreService implements OnModuleInit {
       title: "昨日模型调用汇总",
       amountCny: -22.45,
       createdAt: "2026-03-08T12:00:00.000Z",
+    },
+    {
+      id: "bill_team_001",
+      workspaceId: "ws_team",
+      kind: "topup",
+      title: "团队工作区初始额度",
+      amountCny: 88,
+      createdAt: "2026-03-09T10:00:00.000Z",
     },
   ];
 
@@ -190,6 +229,15 @@ export class StoreService implements OnModuleInit {
         this.postgresStateService.listUsageLedger(),
         this.postgresStateService.listWalletTransactions(),
       ]);
+    const persistedUser = await this.postgresStateService.getCurrentUser();
+
+    if (persistedUser) {
+      this.currentUser = {
+        ...this.currentUser,
+        ...persistedUser,
+        activeWorkspaceId: persistedUser.activeWorkspaceId ?? this.currentUser.activeWorkspaceId,
+      };
+    }
 
     this.deployments = this.mergeById(this.deployments, persistedDeployments);
     this.wallets = this.mergeById(this.wallets, persistedWallets);
@@ -210,6 +258,9 @@ export class StoreService implements OnModuleInit {
         this.walletTransactions.map((item) => this.postgresStateService.insertWalletTransaction(item)),
       );
     }
+    if (!persistedUser) {
+      await this.postgresStateService.upsertCurrentUser(this.currentUser);
+    }
 
     this.logger.log(
       `Loaded persisted state: deployments=${persistedDeployments.length}, wallets=${persistedWallets.length}, ledger=${persistedUsageLedger.length}, transactions=${persistedWalletTransactions.length}`,
@@ -217,6 +268,16 @@ export class StoreService implements OnModuleInit {
   }
 
   getCurrentUser() {
+    return this.currentUser;
+  }
+
+  async setCurrentWorkspace(workspaceId: string) {
+    this.getWorkspace(workspaceId);
+    this.currentUser = {
+      ...this.currentUser,
+      activeWorkspaceId: workspaceId,
+    };
+    await this.postgresStateService.upsertCurrentUser(this.currentUser);
     return this.currentUser;
   }
 

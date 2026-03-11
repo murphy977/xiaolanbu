@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import {
   DeploymentRecord,
   UsageLedgerRecord,
+  UserRecord,
   WalletRecord,
   WalletTransactionRecord,
 } from "./models";
@@ -67,6 +68,12 @@ export class PostgresStateService implements OnModuleDestroy {
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        data JSONB NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS xlb_app_state (
+        key TEXT PRIMARY KEY,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         data JSONB NOT NULL
       );
@@ -171,6 +178,28 @@ export class PostgresStateService implements OnModuleDestroy {
     await this.pool.query(`DELETE FROM xlb_deployments WHERE id = $1`, [id]);
   }
 
+  async getCurrentUser() {
+    return this.querySingle<UserRecord>(
+      "SELECT data FROM xlb_app_state WHERE key = 'current_user' LIMIT 1",
+    );
+  }
+
+  async upsertCurrentUser(record: UserRecord) {
+    if (!this.pool) {
+      return;
+    }
+
+    await this.pool.query(
+      `
+        INSERT INTO xlb_app_state (key, updated_at, data)
+        VALUES ('current_user', NOW(), $1::jsonb)
+        ON CONFLICT (key)
+        DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+      `,
+      [JSON.stringify(record)],
+    );
+  }
+
   private async queryRows<T>(sql: string) {
     if (!this.pool) {
       return [];
@@ -178,6 +207,15 @@ export class PostgresStateService implements OnModuleDestroy {
 
     const result = await this.pool.query<{ data: T }>(sql);
     return result.rows.map((row) => row.data);
+  }
+
+  private async querySingle<T>(sql: string) {
+    if (!this.pool) {
+      return null;
+    }
+
+    const result = await this.pool.query<{ data: T }>(sql);
+    return result.rows[0]?.data ?? null;
   }
 
   private async upsertJson(

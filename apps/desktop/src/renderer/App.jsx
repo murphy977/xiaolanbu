@@ -4,7 +4,6 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://47.86.38.197/api/v1")
   /\/+$/,
   "",
 );
-const WORKSPACE_ID = import.meta.env.VITE_WORKSPACE_ID ?? "ws_main";
 
 const VIEW_META = {
   home: {
@@ -710,6 +709,10 @@ function SettingsView({
   wallet,
   syncing,
   onRefresh,
+  activeWorkspace,
+  workspaces,
+  authLoading,
+  onWorkspaceSwitch,
   createForm,
   onFormChange,
   onInstanceTypeChange,
@@ -1055,12 +1058,30 @@ function SettingsView({
         <div className="pref-list">
           <div className="pref-row">
             <span>默认工作区</span>
-            <strong>{WORKSPACE_ID}</strong>
-          </div>
-          <div className="pref-row">
-            <span>API 网关</span>
-            <strong>{API_BASE}</strong>
-          </div>
+                  <strong>{activeWorkspace?.name ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>工作区切换</span>
+                  <strong>
+                    <select
+                      className="workspace-select"
+                      value={activeWorkspace?.id ?? ""}
+                      onChange={(event) => onWorkspaceSwitch(event.target.value)}
+                      disabled={authLoading}
+                    >
+                      {workspaces.length === 0 ? <option value="">暂无工作区</option> : null}
+                      {workspaces.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </strong>
+                </div>
+                <div className="pref-row">
+                  <span>API 网关</span>
+                  <strong>{API_BASE}</strong>
+                </div>
           <div className="pref-row">
             <span>运行中实例</span>
             <strong>{runningDeployment ? runningDeployment.name : "暂无"}</strong>
@@ -1078,6 +1099,12 @@ function SettingsView({
 export function App() {
   const [currentView, setCurrentView] = useState("home");
   const [topupAmount, setTopupAmount] = useState("50");
+  const [authState, setAuthState] = useState({
+    user: null,
+    workspaces: [],
+    activeWorkspaceId: "",
+    loading: true,
+  });
   const [createForm, setCreateForm] = useState(DEFAULT_DEPLOYMENT_FORM);
   const [workspaceState, setWorkspaceState] = useState({
     wallet: null,
@@ -1098,7 +1125,30 @@ export function App() {
     createFeedback: "",
   });
 
+  const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
+  const activeWorkspace =
+    authState.workspaces.find((item) => item.id === activeWorkspaceId) ?? null;
+
+  const refreshAuthState = async () => {
+    const authResult = await fetchJson("/auth/me");
+    setAuthState({
+      user: authResult.user ?? null,
+      workspaces: authResult.workspaces ?? [],
+      activeWorkspaceId:
+        authResult.activeWorkspaceId ??
+        authResult.currentWorkspace?.id ??
+        authResult.user?.activeWorkspaceId ??
+        "",
+      loading: false,
+    });
+    return authResult;
+  };
+
   const refreshWorkspaceData = async ({ withSync = false } = {}) => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
     startTransition(() => {
       setWorkspaceState((current) => ({
         ...current,
@@ -1110,16 +1160,16 @@ export function App() {
 
     try {
       if (withSync) {
-        await fetchJson(`/billing/workspaces/${WORKSPACE_ID}/sync`, { method: "POST" });
+        await fetchJson(`/billing/workspaces/${activeWorkspaceId}/sync`, { method: "POST" });
       }
 
       const [walletResult, usageResult, summaryResult, transactionsResult, deploymentsResult] =
         await Promise.all([
-          fetchJson(`/billing/workspaces/${WORKSPACE_ID}/wallet`),
-          fetchJson(`/billing/workspaces/${WORKSPACE_ID}/usage?period=today`),
-          fetchJson(`/billing/workspaces/${WORKSPACE_ID}/deployments/summary?period=today`),
-          fetchJson(`/billing/workspaces/${WORKSPACE_ID}/transactions?limit=8`),
-          fetchJson(`/deployments?workspaceId=${encodeURIComponent(WORKSPACE_ID)}`),
+          fetchJson(`/billing/workspaces/${activeWorkspaceId}/wallet`),
+          fetchJson(`/billing/workspaces/${activeWorkspaceId}/usage?period=today`),
+          fetchJson(`/billing/workspaces/${activeWorkspaceId}/deployments/summary?period=today`),
+          fetchJson(`/billing/workspaces/${activeWorkspaceId}/transactions?limit=8`),
+          fetchJson(`/deployments?workspaceId=${encodeURIComponent(activeWorkspaceId)}`),
         ]);
 
       startTransition(() => {
@@ -1148,6 +1198,14 @@ export function App() {
   };
 
   useEffect(() => {
+    void refreshAuthState();
+  }, []);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
     void refreshWorkspaceData();
 
     const timer = window.setInterval(() => {
@@ -1155,9 +1213,71 @@ export function App() {
     }, workspaceState.createPending || workspaceState.actionPendingId ? 5000 : 60000);
 
     return () => window.clearInterval(timer);
-  }, [workspaceState.createPending, workspaceState.actionPendingId]);
+  }, [activeWorkspaceId, workspaceState.createPending, workspaceState.actionPendingId]);
+
+  const handleWorkspaceSwitch = async (workspaceId) => {
+    if (!workspaceId || workspaceId === activeWorkspaceId) {
+      return;
+    }
+
+    setAuthState((current) => ({
+      ...current,
+      loading: true,
+    }));
+
+    try {
+      const result = await fetchJson("/auth/workspace", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workspaceId }),
+      });
+
+      setAuthState({
+        user: result.user ?? null,
+        workspaces: result.workspaces ?? [],
+        activeWorkspaceId:
+          result.activeWorkspaceId ??
+          result.currentWorkspace?.id ??
+          result.user?.activeWorkspaceId ??
+          workspaceId,
+        loading: false,
+      });
+      setWorkspaceState((current) => ({
+        ...current,
+        wallet: null,
+        usageSummary: null,
+        deploymentSummaries: [],
+        deployments: [],
+        transactions: [],
+        createResult: null,
+        createDiagnostics: [],
+        createFeedback: "",
+        error: "",
+        createError: "",
+      }));
+    } catch (error) {
+      setAuthState((current) => ({
+        ...current,
+        loading: false,
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "切换工作区失败，请稍后再试。",
+      }));
+    }
+  };
 
   const handleTopup = async (amount) => {
+    if (!activeWorkspaceId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        error: "当前没有可用工作区，请稍后再试。",
+      }));
+      return;
+    }
+
     if (!Number.isFinite(amount) || amount <= 0) {
       startTransition(() => {
         setWorkspaceState((current) => ({
@@ -1177,7 +1297,7 @@ export function App() {
     });
 
     try {
-      await fetchJson(`/billing/workspaces/${WORKSPACE_ID}/topups`, {
+      await fetchJson(`/billing/workspaces/${activeWorkspaceId}/topups`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1188,7 +1308,7 @@ export function App() {
         }),
       });
 
-      await fetchJson(`/billing/workspaces/${WORKSPACE_ID}/reconcile`, {
+      await fetchJson(`/billing/workspaces/${activeWorkspaceId}/reconcile`, {
         method: "POST",
       });
       await refreshWorkspaceData();
@@ -1228,6 +1348,14 @@ export function App() {
   };
 
   const handleCreateDeployment = async () => {
+    if (!activeWorkspaceId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createError: "当前没有可用工作区，请稍后再试。",
+      }));
+      return;
+    }
+
     if (!createForm.name.trim()) {
       setWorkspaceState((current) => ({
         ...current,
@@ -1269,7 +1397,7 @@ export function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          workspaceId: WORKSPACE_ID,
+          workspaceId: activeWorkspaceId,
           name: createForm.name.trim(),
           mode: "cloud",
           region: createForm.region.trim(),
@@ -1426,6 +1554,19 @@ export function App() {
               <h1 className="page-title">{meta.title}</h1>
             </div>
             <div className="topbar-actions app-no-drag">
+              <select
+                className="workspace-select workspace-select--topbar"
+                value={activeWorkspaceId}
+                onChange={(event) => handleWorkspaceSwitch(event.target.value)}
+                disabled={authState.loading}
+              >
+                {authState.workspaces.length === 0 ? <option value="">加载中...</option> : null}
+                {authState.workspaces.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
               <div className="pill">
                 <span className="pill-dot"></span>
                 {activeDeploymentCount > 0 ? `云端在线 · ${activeDeploymentCount}` : "云端待连接"}
@@ -1471,6 +1612,10 @@ export function App() {
               wallet={workspaceState.wallet}
               syncing={workspaceState.syncing}
               onRefresh={() => refreshWorkspaceData({ withSync: true })}
+              activeWorkspace={activeWorkspace}
+              workspaces={authState.workspaces}
+              authLoading={authState.loading}
+              onWorkspaceSwitch={handleWorkspaceSwitch}
               createForm={createForm}
               onFormChange={handleCreateFormChange}
               onInstanceTypeChange={handleInstanceTypeChange}

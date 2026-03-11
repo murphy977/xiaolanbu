@@ -6,6 +6,7 @@ export interface UserRecord {
   displayName: string;
   email: string;
   avatarInitial: string;
+  activeWorkspaceId: string;
 }
 
 export interface WorkspaceRecord {

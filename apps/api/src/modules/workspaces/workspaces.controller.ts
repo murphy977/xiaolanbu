@@ -8,7 +8,9 @@ export class WorkspacesController {
 
   @Get()
   listWorkspaces() {
+    const currentUser = this.storeService.getCurrentUser();
     return {
+      activeWorkspaceId: currentUser.activeWorkspaceId,
       items: this.storeService.listWorkspaces(),
     };
   }
