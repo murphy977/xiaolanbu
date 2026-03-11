@@ -1,6 +1,7 @@
 const { app, BrowserWindow, clipboard, ipcMain, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -48,6 +49,40 @@ app.whenReady().then(() => {
     }
 
     clipboard.writeText(value);
+    return { ok: true };
+  });
+
+  ipcMain.handle("xiaolanbu:launch-command", async (_event, command) => {
+    if (typeof command !== "string" || !command.trim()) {
+      return { ok: false, error: "invalid-command" };
+    }
+
+    if (process.platform === "darwin") {
+      spawn("osascript", [
+        "-e",
+        'tell application "Terminal" to activate',
+        "-e",
+        `tell application "Terminal" to do script ${JSON.stringify(command)}`,
+      ], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+      return { ok: true };
+    }
+
+    if (process.platform === "win32") {
+      spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", command], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+      return { ok: true };
+    }
+
+    const terminal = process.env.TERMINAL || "x-terminal-emulator";
+    spawn(terminal, ["-e", `bash -lc ${JSON.stringify(command)}`], {
+      detached: true,
+      stdio: "ignore",
+    }).unref();
     return { ok: true };
   });
 

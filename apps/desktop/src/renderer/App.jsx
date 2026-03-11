@@ -135,6 +135,19 @@ function getAppBridge() {
   return window.xiaolanbu ?? null;
 }
 
+async function launchTunnelCommand(command) {
+  if (!command) {
+    return { ok: false };
+  }
+
+  const bridge = getAppBridge();
+  if (bridge?.launchCommand) {
+    return bridge.launchCommand(command);
+  }
+
+  return { ok: false };
+}
+
 function getStoredSessionToken() {
   if (typeof window === "undefined") {
     return "";
@@ -850,6 +863,7 @@ function SettingsView({
   operationNotice,
   onOpenExternal,
   onCopyText,
+  onLaunchTunnel,
   actionPendingId,
   onDeploymentAction,
   workspaceCreateName,
@@ -891,6 +905,13 @@ function SettingsView({
     ? deployments.find((item) => item.id === actionPendingId)
     : null;
   const currentWorkspaceRole = activeWorkspace?.role ?? "member";
+  const createAccess = createResult?.deployment?.access ?? null;
+  const createPublicIp = createResult?.deployment?.publicIpAddress?.[0] ?? "";
+  const derivedTunnelCommand = createPublicIp
+    ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${createPublicIp}`
+    : createAccess?.sshTunnel ?? "";
+  const localDashboardUrl = createAccess?.dashboardUrl ?? "";
+  const localBrowserControlUrl = createPublicIp ? "http://127.0.0.1:18791/" : "";
 
   return (
     <section className="view view--settings is-visible">
@@ -1098,25 +1119,41 @@ function SettingsView({
             </div>
           ) : null}
 
-          {createResult?.deployment?.access ? (
+          {createAccess ? (
             <div className="create-result-card">
               <div className="create-section-title">创建结果</div>
+              <div className="delivery-steps">
+                <div className="delivery-step">
+                  <div className="delivery-step__index">1</div>
+                  <div className="delivery-step__copy">
+                    <strong>先建立本地 Tunnel</strong>
+                    <span>会把 SSH 转发命令直接打开到终端，同时连通 18789 和 18791。</span>
+                  </div>
+                </div>
+                <div className="delivery-step">
+                  <div className="delivery-step__index">2</div>
+                  <div className="delivery-step__copy">
+                    <strong>再打开本地控制台</strong>
+                    <span>隧道连上后，直接打开本机控制台，不再手工改地址。</span>
+                  </div>
+                </div>
+              </div>
               <div className="pref-list">
                 <div className="pref-row">
                   <span>公网 IP</span>
-                  <strong>{createResult.deployment.publicIpAddress?.[0] ?? "--"}</strong>
+                  <strong>{createPublicIp || "--"}</strong>
                 </div>
                 <div className="pref-row">
-                  <span>SSH Tunnel</span>
-                  <strong>{createResult.deployment.access.sshTunnel ?? "--"}</strong>
+                  <span>一键 Tunnel 命令</span>
+                  <strong>{derivedTunnelCommand || "--"}</strong>
                 </div>
                 <div className="pref-row">
-                  <span>控制台地址</span>
-                  <strong>{createResult.deployment.access.dashboardUrl ?? "--"}</strong>
+                  <span>本地控制台</span>
+                  <strong>{localDashboardUrl || "--"}</strong>
                 </div>
                 <div className="pref-row">
                   <span>Browser Control</span>
-                  <strong>{createResult.deployment.access.browserControlUrl ?? "--"}</strong>
+                  <strong>{localBrowserControlUrl || "--"}</strong>
                 </div>
                 <div className="pref-row">
                   <span>最终规格</span>
@@ -1134,22 +1171,29 @@ function SettingsView({
               <div className="result-actions">
                 <button
                   className="primary-button small"
-                  onClick={() => onOpenExternal(createResult.deployment.access.dashboardUrl)}
-                  disabled={!createResult.deployment.access.dashboardUrl}
+                  onClick={() => onLaunchTunnel(derivedTunnelCommand)}
+                  disabled={!derivedTunnelCommand}
                 >
-                  打开控制台
+                  在终端打开 Tunnel
                 </button>
                 <button
                   className="ghost-button small"
-                  onClick={() => onCopyText(createResult.deployment.access.sshTunnel, "SSH Tunnel 已复制")}
-                  disabled={!createResult.deployment.access.sshTunnel}
+                  onClick={() => onOpenExternal(localDashboardUrl)}
+                  disabled={!localDashboardUrl}
                 >
-                  复制 SSH Tunnel
+                  打开本地控制台
                 </button>
                 <button
                   className="ghost-button small"
-                  onClick={() => onCopyText(createResult.deployment.access.dashboardUrl, "控制台地址已复制")}
-                  disabled={!createResult.deployment.access.dashboardUrl}
+                  onClick={() => onCopyText(derivedTunnelCommand, "Tunnel 命令已复制")}
+                  disabled={!derivedTunnelCommand}
+                >
+                  复制 Tunnel 命令
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(localDashboardUrl, "本地控制台地址已复制")}
+                  disabled={!localDashboardUrl}
                 >
                   复制控制台地址
                 </button>
@@ -2579,6 +2623,23 @@ export function App() {
     }));
   };
 
+  const handleLaunchTunnel = async (command) => {
+    if (!command) {
+      return;
+    }
+
+    const result = await launchTunnelCommand(command);
+    if (result?.ok) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createFeedback: "Tunnel 命令已在终端打开。连通后直接点“打开本地控制台”即可。",
+      }));
+      return;
+    }
+
+    await handleCopyText(command, "无法直接打开终端，Tunnel 命令已复制。");
+  };
+
   const handleDeploymentAction = async (deploymentId, action) => {
     const actionMap = {
       start: { method: "POST", path: `/deployments/${deploymentId}/start`, success: "实例已启动。" },
@@ -2898,6 +2959,7 @@ export function App() {
               onCreate={handleCreateDeployment}
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
+              onLaunchTunnel={handleLaunchTunnel}
               actionPendingId={workspaceState.actionPendingId}
               onDeploymentAction={handleDeploymentAction}
               workspaceCreateName={workspaceCreateName}

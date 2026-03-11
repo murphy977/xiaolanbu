@@ -1524,6 +1524,48 @@ select {
   background: rgba(255, 255, 255, 0.66);
 }
 
+.delivery-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.delivery-step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(31, 34, 39, 0.05);
+}
+
+.delivery-step__index {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(255, 122, 72, 0.12);
+  color: var(--accent-orange-deep);
+  font-weight: 800;
+}
+
+.delivery-step__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.delivery-step__copy strong {
+  font-size: 14px;
+}
+
+.delivery-step__copy span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .progress-line {
   display: grid;
   gap: 12px;
