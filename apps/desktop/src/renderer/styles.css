@@ -1270,6 +1270,10 @@ select {
   background: linear-gradient(135deg, rgba(255, 214, 206, 0.82), rgba(255, 245, 242, 0.94));
 }
 
+.inline-notice--success {
+  background: linear-gradient(135deg, rgba(204, 247, 236, 0.84), rgba(242, 255, 251, 0.94));
+}
+
 .plan-grid--stats {
   margin-top: -2px;
 }
@@ -1359,6 +1363,40 @@ select {
   display: grid;
   gap: 12px;
   margin-top: 18px;
+}
+
+.settings-card--create {
+  gap: 18px;
+}
+
+.create-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.create-grid--triple,
+.create-grid--advanced {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.create-instance-types,
+.create-result-card {
+  display: grid;
+  gap: 14px;
+}
+
+.create-section-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.create-result-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(31, 34, 39, 0.06);
+  background: rgba(255, 255, 255, 0.64);
 }
 
 .instance-usage-item,
@@ -1485,7 +1523,10 @@ select {
   .plan-grid,
   .stat-strip,
   .membership-grid,
-  .deployment-grid {
+  .deployment-grid,
+  .create-grid,
+  .create-grid--triple,
+  .create-grid--advanced {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1535,7 +1576,10 @@ select {
   .balance-grid,
   .compare-grid,
   .action-grid,
-  .quick-topup-grid {
+  .quick-topup-grid,
+  .create-grid,
+  .create-grid--triple,
+  .create-grid--advanced {
     display: grid;
     grid-template-columns: 1fr;
   }

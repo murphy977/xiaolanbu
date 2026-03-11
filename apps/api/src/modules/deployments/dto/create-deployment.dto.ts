@@ -43,6 +43,11 @@ export class CreateDeploymentDto {
   instanceType?: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  instanceTypes?: string[];
+
+  @IsOptional()
   @IsString()
   securityGroupId?: string;
 

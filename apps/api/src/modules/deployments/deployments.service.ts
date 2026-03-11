@@ -29,6 +29,7 @@ export class DeploymentsService {
 
     this.assertAliyunCloudInput(body);
 
+    const instanceTypeCandidates = this.resolveInstanceTypeCandidates(body);
     const deploymentId = this.createDeploymentId();
     const gatewayProvision =
       body.dryRun === true
@@ -40,26 +41,45 @@ export class DeploymentsService {
             requestedModelId: body.openclawModelId,
           });
 
-    const vendorResult = await this.aliyunEcsService.runInstances({
-      regionId: body.region!,
-      imageId: body.imageId!,
-      instanceType: body.instanceType!,
-      securityGroupId: body.securityGroupId!,
-      vSwitchId: body.vSwitchId!,
-      instanceName: body.name,
-      amount: body.amount,
-      dryRun: body.dryRun,
-      password: body.password,
-      userData: this.resolveUserData(body, gatewayProvision ?? undefined),
-      systemDiskCategory: body.systemDiskCategory,
-      systemDiskSize: body.systemDiskSize,
-      internetMaxBandwidthOut: body.internetMaxBandwidthOut,
-      tags: [
-        { key: "product", value: "xiaolanbu" },
-        { key: "workspace_id", value: body.workspaceId },
-        ...(body.tags ?? []),
-      ],
-    });
+    let selectedInstanceType = instanceTypeCandidates[0];
+    let vendorResult: Awaited<ReturnType<AliyunEcsService["runInstances"]>> | null = null;
+    let lastProvisionError: unknown = null;
+
+    for (const instanceType of instanceTypeCandidates) {
+      try {
+        vendorResult = await this.aliyunEcsService.runInstances({
+          regionId: body.region!,
+          imageId: body.imageId!,
+          instanceType,
+          securityGroupId: body.securityGroupId!,
+          vSwitchId: body.vSwitchId!,
+          instanceName: body.name,
+          amount: body.amount,
+          dryRun: body.dryRun,
+          password: body.password,
+          userData: this.resolveUserData(body, gatewayProvision ?? undefined),
+          systemDiskCategory: body.systemDiskCategory,
+          systemDiskSize: body.systemDiskSize,
+          internetMaxBandwidthOut: body.internetMaxBandwidthOut,
+          tags: [
+            { key: "product", value: "xiaolanbu" },
+            { key: "workspace_id", value: body.workspaceId },
+            ...(body.tags ?? []),
+          ],
+        });
+        selectedInstanceType = instanceType;
+        break;
+      } catch (error) {
+        lastProvisionError = error;
+        if (!this.isRetryableInstanceTypeError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!vendorResult) {
+      throw lastProvisionError;
+    }
 
     if (vendorResult.dryRunPassed) {
       return {
@@ -93,7 +113,8 @@ export class DeploymentsService {
         orderId: vendorResult.orderId,
         tradePrice: vendorResult.tradePrice,
         imageId: body.imageId,
-        instanceType: body.instanceType,
+        instanceType: selectedInstanceType,
+        instanceTypeCandidates,
         gatewayTokenId: gatewayProvision?.tokenId,
         gatewayKeyName: gatewayProvision?.keyName,
         gatewayKeyAlias: gatewayProvision?.keyAlias,
@@ -182,7 +203,7 @@ export class DeploymentsService {
     const missing = [
       ["region", body.region],
       ["imageId", body.imageId],
-      ["instanceType", body.instanceType],
+      ["instanceType", body.instanceType || body.instanceTypes?.[0]],
       ["securityGroupId", body.securityGroupId],
       ["vSwitchId", body.vSwitchId],
     ]
@@ -194,6 +215,27 @@ export class DeploymentsService {
         `Aliyun cloud deployment is missing required fields: ${missing.join(", ")}`,
       );
     }
+  }
+
+  private resolveInstanceTypeCandidates(body: CreateDeploymentDto) {
+    const candidates = [
+      ...(body.instanceTypes ?? []),
+      ...(body.instanceType ? [body.instanceType] : []),
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    return [...new Set(candidates)];
+  }
+
+  private isRetryableInstanceTypeError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    return [
+      "OperationDenied.NoStock",
+      "InvalidResourceType.NotSupported",
+      "InvalidInstanceType.NotSupportDiskCategory",
+    ].some((pattern) => message.includes(pattern));
   }
 
   private resolveUserData(

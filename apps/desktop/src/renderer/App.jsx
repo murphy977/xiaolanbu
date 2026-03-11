@@ -116,6 +116,16 @@ const PLAN_PITCHES = [
 ];
 
 const QUICK_TOPUPS = [20, 50, 100, 300];
+const DEFAULT_DEPLOYMENT_FORM = {
+  name: "demo",
+  password: "",
+  region: "cn-hongkong",
+  imageId: "m-j6c0rj8d2w79realogm8",
+  securityGroupId: "sg-j6cc6ew2bqki6ag3y1q4",
+  vSwitchId: "vsw-j6cispsiaf2g219a6isht",
+  internetMaxBandwidthOut: "5",
+  instanceTypes: ["ecs.n1.small", "ecs.n4.small", "ecs.t5-lc1m2.small"],
+};
 
 function formatCurrency(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -685,12 +695,139 @@ function MembershipView({
   );
 }
 
-function SettingsView({ deployments, wallet, syncing, onRefresh }) {
+function SettingsView({
+  deployments,
+  wallet,
+  syncing,
+  onRefresh,
+  createForm,
+  onFormChange,
+  onInstanceTypeChange,
+  createPending,
+  createError,
+  createResult,
+  onCreate,
+}) {
   const runningDeployment = deployments.find((item) => item.status === "running");
 
   return (
     <section className="view view--settings is-visible">
       <div className="settings-layout">
+        <article className="card settings-card settings-card--create">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">开通云端实例</div>
+              <div className="card-subtitle">
+                用户只需要填写实例名称和登录密码，小懒布会按香港地域的默认资源自动完成创建，并按规格顺序兜底重试。
+              </div>
+            </div>
+            <button className="primary-button small" onClick={onCreate} disabled={createPending}>
+              {createPending ? "创建中..." : "立即开通"}
+            </button>
+          </div>
+
+          {createError ? <div className="inline-notice inline-notice--error">{createError}</div> : null}
+          {createResult ? (
+            <div className="inline-notice inline-notice--success">
+              已创建实例 {createResult.deployment?.name}，公网 IP {createResult.deployment?.publicIpAddress?.[0] ?? "--"}。
+            </div>
+          ) : null}
+
+          <div className="create-grid">
+            <label className="field">
+              <span>实例名称</span>
+              <input
+                type="text"
+                value={createForm.name}
+                onChange={(event) => onFormChange("name", event.target.value)}
+                placeholder="例如：客服值守"
+              />
+            </label>
+            <label className="field">
+              <span>SSH 密码</span>
+              <input
+                type="password"
+                value={createForm.password}
+                onChange={(event) => onFormChange("password", event.target.value)}
+                placeholder="用于登录 ECS"
+              />
+            </label>
+            <label className="field">
+              <span>地域</span>
+              <input type="text" value={createForm.region} onChange={(event) => onFormChange("region", event.target.value)} />
+            </label>
+            <label className="field">
+              <span>公网带宽(Mbps)</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={createForm.internetMaxBandwidthOut}
+                onChange={(event) => onFormChange("internetMaxBandwidthOut", event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="create-instance-types">
+            <div className="create-section-title">实例规格兜底顺序</div>
+            <div className="create-grid create-grid--triple">
+              {createForm.instanceTypes.map((instanceType, index) => (
+                <label className="field" key={`instance-type-${index}`}>
+                  <span>第 {index + 1} 选择</span>
+                  <input
+                    type="text"
+                    value={instanceType}
+                    onChange={(event) => onInstanceTypeChange(index, event.target.value)}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="create-grid create-grid--advanced">
+            <label className="field">
+              <span>镜像 ID</span>
+              <input type="text" value={createForm.imageId} onChange={(event) => onFormChange("imageId", event.target.value)} />
+            </label>
+            <label className="field">
+              <span>安全组 ID</span>
+              <input
+                type="text"
+                value={createForm.securityGroupId}
+                onChange={(event) => onFormChange("securityGroupId", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>交换机 ID</span>
+              <input type="text" value={createForm.vSwitchId} onChange={(event) => onFormChange("vSwitchId", event.target.value)} />
+            </label>
+          </div>
+
+          {createResult?.deployment?.access ? (
+            <div className="create-result-card">
+              <div className="create-section-title">创建结果</div>
+              <div className="pref-list">
+                <div className="pref-row">
+                  <span>公网 IP</span>
+                  <strong>{createResult.deployment.publicIpAddress?.[0] ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>SSH Tunnel</span>
+                  <strong>{createResult.deployment.access.sshTunnel ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>控制台地址</span>
+                  <strong>{createResult.deployment.access.dashboardUrl ?? "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>Browser Control</span>
+                  <strong>{createResult.deployment.access.browserControlUrl ?? "--"}</strong>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </article>
+
         <article className="card settings-card">
           <div className="card-heading">
             <div>
@@ -792,6 +929,7 @@ function SettingsView({ deployments, wallet, syncing, onRefresh }) {
 export function App() {
   const [currentView, setCurrentView] = useState("home");
   const [topupAmount, setTopupAmount] = useState("50");
+  const [createForm, setCreateForm] = useState(DEFAULT_DEPLOYMENT_FORM);
   const [workspaceState, setWorkspaceState] = useState({
     wallet: null,
     usageSummary: null,
@@ -801,7 +939,10 @@ export function App() {
     loading: true,
     syncing: false,
     topupPending: false,
+    createPending: false,
     error: "",
+    createError: "",
+    createResult: null,
   });
 
   const refreshWorkspaceData = async ({ withSync = false } = {}) => {
@@ -917,6 +1058,95 @@ export function App() {
     });
   };
 
+  const handleCreateFormChange = (field, value) => {
+    setCreateForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleInstanceTypeChange = (index, value) => {
+    setCreateForm((current) => ({
+      ...current,
+      instanceTypes: current.instanceTypes.map((item, itemIndex) =>
+        itemIndex === index ? value : item,
+      ),
+    }));
+  };
+
+  const handleCreateDeployment = async () => {
+    if (!createForm.name.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createError: "请先填写实例名称。",
+      }));
+      return;
+    }
+
+    if (!createForm.password.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createError: "请先填写 SSH 登录密码。",
+      }));
+      return;
+    }
+
+    const instanceTypes = createForm.instanceTypes.map((item) => item.trim()).filter(Boolean);
+    if (instanceTypes.length === 0) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createError: "请至少保留一个可用的实例规格。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      createPending: true,
+      createError: "",
+      createResult: null,
+    }));
+
+    try {
+      const result = await fetchJson("/deployments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: WORKSPACE_ID,
+          name: createForm.name.trim(),
+          mode: "cloud",
+          region: createForm.region.trim(),
+          imageId: createForm.imageId.trim(),
+          instanceType: instanceTypes[0],
+          instanceTypes,
+          securityGroupId: createForm.securityGroupId.trim(),
+          vSwitchId: createForm.vSwitchId.trim(),
+          internetMaxBandwidthOut: Number(createForm.internetMaxBandwidthOut || 0),
+          password: createForm.password,
+          waitForRunning: true,
+          waitTimeoutSeconds: 240,
+          dryRun: false,
+        }),
+      });
+
+      setWorkspaceState((current) => ({
+        ...current,
+        createPending: false,
+        createError: "",
+        createResult: result,
+      }));
+      await refreshWorkspaceData({ withSync: true });
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createPending: false,
+        createError: error instanceof Error ? error.message : "创建实例失败，请稍后再试。",
+      }));
+    }
+  };
+
   const meta = VIEW_META[currentView];
   const activeDeploymentCount = useMemo(
     () => workspaceState.deployments.filter((item) => item.status === "running").length,
@@ -989,6 +1219,13 @@ export function App() {
               wallet={workspaceState.wallet}
               syncing={workspaceState.syncing}
               onRefresh={() => refreshWorkspaceData({ withSync: true })}
+              createForm={createForm}
+              onFormChange={handleCreateFormChange}
+              onInstanceTypeChange={handleInstanceTypeChange}
+              createPending={workspaceState.createPending}
+              createError={workspaceState.createError}
+              createResult={workspaceState.createResult}
+              onCreate={handleCreateDeployment}
             />
           ) : null}
         </main>
