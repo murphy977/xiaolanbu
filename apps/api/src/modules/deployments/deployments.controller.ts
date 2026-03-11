@@ -48,7 +48,7 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, body.workspaceId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, body.workspaceId);
     return this.deploymentsService.createDeployment(body);
   }
 
@@ -59,7 +59,8 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    const deployment = this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, deployment.workspaceId);
     return {
       deployment: await this.deploymentsService.updateDeploymentStatus(deploymentId, body.status),
     };
@@ -71,7 +72,8 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    const deployment = this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, deployment.workspaceId);
     return this.deploymentsService.startDeployment(deploymentId);
   }
 
@@ -81,7 +83,8 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    const deployment = this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, deployment.workspaceId);
     return this.deploymentsService.stopDeployment(deploymentId);
   }
 
@@ -91,7 +94,8 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    const deployment = this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, deployment.workspaceId);
     return this.deploymentsService.restartDeployment(deploymentId);
   }
 
@@ -101,7 +105,8 @@ export class DeploymentsController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    const deployment = this.storeService.getDeploymentForUser(currentUser.id, deploymentId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, deployment.workspaceId);
     return this.deploymentsService.destroyDeployment(deploymentId);
   }
 }

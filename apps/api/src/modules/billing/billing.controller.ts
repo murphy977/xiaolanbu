@@ -137,7 +137,7 @@ export class BillingController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, workspaceId);
     return this.billingService.createWalletTopup({
       workspaceId,
       amountCny: body.amountCny,
@@ -152,7 +152,7 @@ export class BillingController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, workspaceId);
     return this.billingService.createWalletAdjustment({
       workspaceId,
       amountCny: body.amountCny,
@@ -166,7 +166,7 @@ export class BillingController {
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
     const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
+    this.storeService.assertUserCanManageWorkspace(currentUser.id, workspaceId);
     return this.billingService.reconcileWorkspaceGatewayBudgets(workspaceId);
   }
 }

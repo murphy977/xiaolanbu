@@ -483,6 +483,23 @@ export class StoreService implements OnModuleInit {
     return targetWorkspace;
   }
 
+  getWorkspaceMembership(userId: string, workspaceId: string) {
+    return this.workspaceMembers.find(
+      (item) => item.userId === userId && item.workspaceId === workspaceId,
+    ) ?? null;
+  }
+
+  assertUserCanManageWorkspace(userId: string, workspaceId: string) {
+    const membership = this.getWorkspaceMembership(userId, workspaceId);
+    if (!membership) {
+      throw new ForbiddenException(`Workspace ${workspaceId} is not accessible for user ${userId}`);
+    }
+    if (membership.role !== "owner") {
+      throw new ForbiddenException(`Workspace ${workspaceId} requires owner role`);
+    }
+    return membership;
+  }
+
   listDeploymentsForUser(userId: string, workspaceId?: string) {
     const accessibleWorkspaceIds = new Set(this.listUserWorkspaces(userId).map((item) => item.id));
     if (workspaceId) {
