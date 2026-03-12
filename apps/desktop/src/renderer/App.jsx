@@ -409,6 +409,7 @@ function AuthView({
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__mouth auth-creature__mouth--coral"></div>
                 <div className="auth-creature__cheek auth-creature__cheek--left"></div>
                 <div className="auth-creature__cheek auth-creature__cheek--right"></div>
                 <div className="auth-creature__arm auth-creature__arm--left"></div>
@@ -421,6 +422,7 @@ function AuthView({
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__mouth auth-creature__mouth--mint"></div>
                 <div className="auth-creature__arm auth-creature__arm--mint-left"></div>
                 <div className="auth-creature__arm auth-creature__arm--mint-right"></div>
                 <div className="auth-creature__antenna auth-creature__antenna--left"></div>
@@ -433,6 +435,7 @@ function AuthView({
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__mouth auth-creature__mouth--cream"></div>
                 <div className="auth-creature__paw auth-creature__paw--left"></div>
                 <div className="auth-creature__paw auth-creature__paw--right"></div>
                 <div className="auth-creature__tail"></div>
@@ -472,7 +475,7 @@ function AuthView({
           </div>
         </article>
 
-        <article className="auth-card">
+        <article className={`auth-card ${isLogin ? "is-login" : "is-register"}`}>
           <div className="auth-card__header">
             <div className="auth-mark">
               <span className="auth-mark__dot"></span>
