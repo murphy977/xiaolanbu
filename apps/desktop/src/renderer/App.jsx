@@ -241,14 +241,23 @@ function getNormalizedTunnelCommand(command) {
     return trimmed;
   }
 
-  if (trimmed.includes("StrictHostKeyChecking=")) {
-    return trimmed;
+  let normalized = trimmed;
+  if (!normalized.includes("StrictHostKeyChecking=")) {
+    normalized = normalized.replace(
+      /^ssh\s+/,
+      "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ",
+    );
   }
 
-  return trimmed.replace(
-    /^ssh\s+/,
-    "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ",
-  );
+  if (!/\s-f(\s|$)/.test(normalized)) {
+    normalized = normalized.replace(/^ssh\s+/, "ssh -f ");
+  }
+
+  if (!normalized.includes("ExitOnForwardFailure=")) {
+    normalized = normalized.replace(/^ssh\s+/, "ssh -o ExitOnForwardFailure=yes ");
+  }
+
+  return normalized;
 }
 
 function formatCurrency(value) {
@@ -2979,8 +2988,8 @@ export function App() {
       setWorkspaceState((current) => ({
         ...current,
         createFeedback: result.automated
-          ? "Tunnel 已自动建立。首次确认和密码输入都已处理，连通后直接点“打开本地控制台”即可。"
-          : "Tunnel 命令已在终端打开。首次确认会自动跳过；如果终端提示密码，请手动输入后再打开本地控制台。",
+          ? "Tunnel 已在后台自动建立。首次确认和密码输入都已处理，连通后直接点“打开本地控制台”即可。"
+          : "Tunnel 命令已在终端后台打开。首次确认会自动跳过；如果终端提示密码，请手动输入后再打开本地控制台。",
       }));
       return;
     }
