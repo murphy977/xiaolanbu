@@ -1092,6 +1092,21 @@ select {
   padding-top: 18px;
 }
 
+.assistant-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.assistant-pref-list {
+  margin-top: 18px;
+}
+
+.assistant-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .composer-input {
   flex: 1;
   min-height: 64px;

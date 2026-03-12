@@ -536,26 +536,42 @@ function HomeView({ go, wallet, usageSummary, activeDeploymentCount }) {
   );
 }
 
-function AssistantView() {
+function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText, go }) {
+  const runningDeployments = deployments.filter((item) => item.status === "running");
+  const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
+  const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
+  const tunnelCommand = publicIp
+    ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${publicIp}`
+    : primaryDeployment?.access?.sshTunnel ?? "";
+  const dashboardUrl = primaryDeployment?.access?.dashboardUrl ?? primaryDeployment?.consoleUrl ?? "";
+  const browserControlUrl =
+    primaryDeployment?.mode === "cloud" && publicIp
+      ? "http://127.0.0.1:18791/"
+      : primaryDeployment?.access?.browserControlUrl ?? "";
+
   return (
     <section className="view view--assistant is-visible">
       <div className="assistant-layout">
         <article className="card assistant-sidecard">
-          <div className="card-title">今天的助手模式</div>
-          <div className="mode-pill mode-pill--warm">轻松陪跑</div>
-          <div className="card-subtitle">更像一个每天都在线的搭子，而不是冷冰冰的控制台。</div>
+          <div className="card-title">开始聊天</div>
+          <div className="mode-pill mode-pill--warm">
+            {primaryDeployment?.status === "running" ? "实例在线" : "等待开通"}
+          </div>
+          <div className="card-subtitle">
+            小懒布桌面端现在会把你直接带到真实控制台入口，不再停留在演示稿界面。
+          </div>
           <div className="mini-stack">
             <div className="mini-stack__item">
-              <strong>推荐操作</strong>
-              <span>让小懒布先帮你总结今天的消息和待办。</span>
+              <strong>当前实例</strong>
+              <span>{primaryDeployment ? `${primaryDeployment.name} · ${primaryDeployment.status}` : "还没有云端实例"}</span>
             </div>
             <div className="mini-stack__item">
-              <strong>云端状态</strong>
-              <span>已托管，离线时也能继续处理自动任务。</span>
+              <strong>公网地址</strong>
+              <span>{publicIp || "实例创建完成后会显示公网 IP"}</span>
             </div>
             <div className="mini-stack__item">
-              <strong>隐私模式</strong>
-              <span>需要时可一键切回本地使用。</span>
+              <strong>使用方式</strong>
+              <span>先打开 Tunnel，再打开本地控制台开始聊天。</span>
             </div>
           </div>
         </article>
@@ -563,34 +579,97 @@ function AssistantView() {
         <article className="chat-surface">
           <div className="chat-toolbar">
             <div>
-              <div className="chat-toolbar__title">与小懒布对话</div>
-              <div className="chat-toolbar__sub">自然提问，自然交代任务。</div>
+              <div className="chat-toolbar__title">真实控制台入口</div>
+              <div className="chat-toolbar__sub">连接正在运行的 OpenClaw 实例，直接开始聊天。</div>
             </div>
             <div className="chat-toolbar__actions">
-              <button className="ghost-button small">新会话</button>
-              <button className="ghost-button small">语音输入</button>
+              <button className="ghost-button small" onClick={() => go("settings")}>
+                去管理实例
+              </button>
+              <button className="ghost-button small" onClick={() => go("membership")}>
+                去会员中心
+              </button>
             </div>
           </div>
 
-          <div className="chat-stream">
-            <div className="bubble bubble--assistant">
-              早安，我已经帮你把今天早上收到的消息扫了一遍。要不要我先按“客户 / 团队 / 个人”分成三类？
-            </div>
-            <div className="bubble bubble--user">
-              可以，然后把最紧急的三件事单独列出来。
-            </div>
-            <div className="bubble bubble--assistant">
-              好的，目前最紧急的是：
-              <br />1. 回复 A 客户报价确认
-              <br />2. 跟进 B 项目交付时间
-              <br />3. 处理团队今日排期变更
-            </div>
-          </div>
+          {primaryDeployment?.status === "running" ? (
+            <>
+              <div className="chat-stream">
+                <div className="bubble bubble--assistant">
+                  第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。
+                </div>
+                <div className="bubble bubble--assistant">
+                  第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。
+                </div>
+                <div className="bubble bubble--user">
+                  当前实例：{primaryDeployment.name} · {publicIp || "无公网 IP"}
+                </div>
+              </div>
 
-          <div className="composer">
-            <div className="composer-input">输入一句话，比如：帮我回顾今天的工作进展</div>
-            <button className="primary-button small-cta">发送</button>
-          </div>
+              <div className="pref-list assistant-pref-list">
+                <div className="pref-row">
+                  <span>SSH Tunnel</span>
+                  <strong>{tunnelCommand || "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>本地控制台</span>
+                  <strong>{dashboardUrl || "--"}</strong>
+                </div>
+                <div className="pref-row">
+                  <span>Browser Control</span>
+                  <strong>{browserControlUrl || "--"}</strong>
+                </div>
+              </div>
+
+              <div className="composer assistant-actions">
+                <button
+                  className="primary-button small-cta"
+                  onClick={() => onLaunchTunnel(tunnelCommand)}
+                  disabled={!tunnelCommand}
+                >
+                  先打开 Tunnel
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onOpenExternal(dashboardUrl)}
+                  disabled={!dashboardUrl}
+                >
+                  打开本地控制台
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onOpenExternal(browserControlUrl)}
+                  disabled={!browserControlUrl}
+                >
+                  Browser Control
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => onCopyText(tunnelCommand, "Tunnel 命令已复制")}
+                  disabled={!tunnelCommand}
+                >
+                  复制 Tunnel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="assistant-empty-state">
+              <div className="bubble bubble--assistant">
+                你当前还没有在线实例，所以还不能直接进入真实聊天控制台。
+              </div>
+              <div className="bubble bubble--assistant">
+                去设置页开通一台云端实例，创建完成后再回来点“小懒布”，就能直接开始聊。
+              </div>
+              <div className="composer assistant-actions">
+                <button className="primary-button small-cta" onClick={() => go("settings")}>
+                  去开通云端实例
+                </button>
+                <button className="ghost-button small" onClick={() => go("membership")}>
+                  先去充值
+                </button>
+              </div>
+            </div>
+          )}
         </article>
       </div>
     </section>
@@ -3011,7 +3090,15 @@ export function App() {
               activeDeploymentCount={activeDeploymentCount}
             />
           ) : null}
-          {currentView === "assistant" ? <AssistantView /> : null}
+          {currentView === "assistant" ? (
+            <AssistantView
+              deployments={workspaceState.deployments}
+              onLaunchTunnel={handleLaunchTunnel}
+              onOpenExternal={handleOpenExternal}
+              onCopyText={handleCopyText}
+              go={setCurrentView}
+            />
+          ) : null}
           {currentView === "discover" ? <DiscoverView /> : null}
           {currentView === "membership" ? (
             <MembershipView
