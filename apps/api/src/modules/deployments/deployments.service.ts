@@ -21,10 +21,7 @@ export class DeploymentsService {
 
   async createDeployment(body: CreateDeploymentDto) {
     if (body.mode === "local") {
-      return {
-        deployment: await this.storeService.createDeployment(body),
-        vendor: null,
-      };
+      return this.createLocalDeployment(body);
     }
 
     this.assertAliyunCloudInput(body);
@@ -365,6 +362,89 @@ export class DeploymentsService {
     return {
       deployment: await this.storeService.deleteDeployment(deploymentId),
       vendor,
+    };
+  }
+
+  private async createLocalDeployment(body: CreateDeploymentDto) {
+    const deploymentId = this.createDeploymentId();
+    const gatewayProvision = await this.resolveGatewayProvision({
+      deploymentId,
+      workspaceId: body.workspaceId,
+      deploymentName: body.name,
+      requestedModelId: body.openclawModelId,
+    });
+
+    if (!gatewayProvision) {
+      throw new BadRequestException("当前网关未就绪，暂时无法创建本地部署。");
+    }
+
+    const gatewayPort = body.openclawGatewayPort ?? 18789;
+    const gatewayBind = body.openclawGatewayBind ?? "loopback";
+    const browserControlPort = gatewayPort + 2;
+    const gatewayToken = randomBytes(24).toString("hex");
+    const dashboardUrl = `http://127.0.0.1:${gatewayPort}/#token=${gatewayToken}`;
+    const browserControlUrl = `http://127.0.0.1:${browserControlPort}/`;
+    const tokenSource = "desktop-local-bootstrap (gateway.auth.token)";
+    const logPath = "~/Library/Logs/Xiaolanbu/local-bootstrap.log";
+
+    const deployment = await this.storeService.createDeployment({
+      id: deploymentId,
+      workspaceId: body.workspaceId,
+      name: body.name,
+      mode: "local",
+      status: "creating",
+      provider: "local",
+      region: "local-device",
+      consoleUrl: dashboardUrl,
+      gatewayUrl: gatewayProvision.baseUrl,
+      access: {
+        dashboardUrl,
+        browserControlUrl,
+        tokenSource,
+      },
+      gatewayKey: {
+        tokenId: gatewayProvision.tokenId,
+        secretKey: gatewayProvision.apiKey,
+        keyName: gatewayProvision.keyName,
+        keyAlias: gatewayProvision.keyAlias,
+        modelId: body.openclawModelId ?? gatewayProvision.modelId,
+        baseUrl: body.openclawBaseUrl ?? gatewayProvision.baseUrl,
+      },
+      metadata: {
+        dryRun: body.dryRun ?? false,
+        providerId: body.openclawProviderId ?? gatewayProvision.providerId,
+        baseUrl: body.openclawBaseUrl ?? gatewayProvision.baseUrl,
+        modelId: body.openclawModelId ?? gatewayProvision.modelId,
+        gatewayPort,
+        gatewayBind,
+        browserControlPort,
+        gatewayToken,
+        logPath,
+        gatewayTokenId: gatewayProvision.tokenId,
+        gatewayKeyName: gatewayProvision.keyName,
+        gatewayKeyAlias: gatewayProvision.keyAlias,
+      },
+    });
+
+    return {
+      deployment,
+      vendor: null,
+      wait: null,
+      bootstrap: {
+        deploymentId,
+        apiKey: gatewayProvision.apiKey,
+        providerId: body.openclawProviderId ?? gatewayProvision.providerId,
+        baseUrl: body.openclawBaseUrl ?? gatewayProvision.baseUrl,
+        modelId: body.openclawModelId ?? gatewayProvision.modelId,
+        gatewayPort,
+        gatewayBind,
+        browserControlPort,
+        gatewayToken,
+        dashboardUrl,
+        browserControlUrl,
+        tokenSource,
+        logPath,
+      },
     };
   }
 

@@ -5,6 +5,11 @@ const os = require("os");
 const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 
+const LOCAL_LOG_DIR = path.join(os.homedir(), "Library", "Logs", "Xiaolanbu");
+const LOCAL_BOOTSTRAP_LOG = path.join(LOCAL_LOG_DIR, "local-bootstrap.log");
+const LOCAL_DEFAULT_DASHBOARD_PORT = 18789;
+const LOCAL_DEFAULT_BROWSER_CONTROL_PORT = 18791;
+
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
@@ -67,6 +72,178 @@ function launchDetached(command, args) {
     detached: true,
     stdio: "ignore",
   }).unref();
+}
+
+function ensureDirectory(targetPath) {
+  fs.mkdirSync(targetPath, { recursive: true });
+}
+
+function runSpawnCapture(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr, code });
+        return;
+      }
+
+      const error = new Error(
+        stderr.trim() || stdout.trim() || `${command} exited with code ${String(code)}`,
+      );
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.code = code;
+      reject(error);
+    });
+  });
+}
+
+async function detectLocalOpenClawRuntime() {
+  try {
+    const result = await runSpawnCapture("/bin/bash", [
+      "-lc",
+      [
+        "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH",
+        "if ! command -v openclaw >/dev/null 2>&1; then exit 9; fi",
+        'binary_path="$(command -v openclaw)"',
+        'version="$($binary_path --version 2>/dev/null | head -n 1 || true)"',
+        'printf "BINARY=%s\\nVERSION=%s\\n" "$binary_path" "$version"',
+      ].join("\n"),
+    ]);
+
+    const binaryPath =
+      result.stdout
+        .split("\n")
+        .find((line) => line.startsWith("BINARY="))
+        ?.replace(/^BINARY=/, "")
+        .trim() ?? "";
+    const version =
+      result.stdout
+        .split("\n")
+        .find((line) => line.startsWith("VERSION="))
+        ?.replace(/^VERSION=/, "")
+        .trim() ?? "";
+
+    return {
+      ok: true,
+      installed: Boolean(binaryPath),
+      binaryPath,
+      version,
+    };
+  } catch (error) {
+    if (error?.code === 9) {
+      return {
+        ok: true,
+        installed: false,
+        binaryPath: "",
+        version: "",
+      };
+    }
+
+    return {
+      ok: false,
+      installed: false,
+      binaryPath: "",
+      version: "",
+      error: error instanceof Error ? error.message : "detect-openclaw-failed",
+    };
+  }
+}
+
+function createLocalBootstrapScript(payload) {
+  const {
+    apiKey,
+    providerId,
+    baseUrl,
+    modelId,
+    gatewayPort,
+    gatewayBind,
+    gatewayToken,
+    browserControlPort,
+  } = payload;
+
+  ensureDirectory(LOCAL_LOG_DIR);
+
+  const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-local-"));
+  const launcherPath = path.join(launcherDir, "bootstrap-local-openclaw.sh");
+  const script = `#!/bin/bash
+set -euo pipefail
+exec > >(tee -a ${shellEscape(LOCAL_BOOTSTRAP_LOG)}) 2>&1
+
+export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH
+export HOME=${shellEscape(os.homedir())}
+export USER=${shellEscape(os.userInfo().username)}
+export LOGNAME=${shellEscape(os.userInfo().username)}
+export OPENCLAW_API_KEY=${shellEscape(apiKey)}
+
+echo "[xiaolanbu-local] bootstrap started at $(date -Is)"
+
+if ! command -v openclaw >/dev/null 2>&1; then
+  echo "[xiaolanbu-local] openclaw not found, installing runtime"
+  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard
+fi
+
+if ! command -v openclaw >/dev/null 2>&1; then
+  echo "[xiaolanbu-local] openclaw installation did not expose binary on PATH"
+  exit 1
+fi
+
+echo "[xiaolanbu-local] using openclaw at $(command -v openclaw)"
+echo "[xiaolanbu-local] running onboard"
+
+openclaw onboard \\
+  --non-interactive \\
+  --accept-risk \\
+  --mode local \\
+  --auth-choice custom-api-key \\
+  --custom-provider-id ${shellEscape(providerId)} \\
+  --custom-base-url ${shellEscape(baseUrl)} \\
+  --custom-model-id ${shellEscape(modelId)} \\
+  --custom-compatibility openai \\
+  --gateway-port ${String(gatewayPort)} \\
+  --gateway-bind ${shellEscape(gatewayBind)} \\
+  --gateway-auth token \\
+  --gateway-token ${shellEscape(gatewayToken)} \\
+  --install-daemon \\
+  --skip-ui \\
+  --skip-channels \\
+  --skip-skills \\
+  --skip-search
+
+echo "[xiaolanbu-local] waiting for ports ${String(gatewayPort)} and ${String(browserControlPort)}"
+for _ in $(seq 1 45); do
+  if lsof -n -iTCP:${String(gatewayPort)} -sTCP:LISTEN >/dev/null 2>&1 && lsof -n -iTCP:${String(
+    browserControlPort,
+  )} -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "[xiaolanbu-local] local gateway is ready"
+    echo "[xiaolanbu-local] bootstrap finished at $(date -Is)"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "[xiaolanbu-local] local gateway did not become ready in time"
+exit 1
+`;
+
+  fs.writeFileSync(launcherPath, script, { mode: 0o700 });
+  return launcherPath;
 }
 
 function extractTunnelHost(command) {
@@ -190,6 +367,26 @@ function checkLocalPortOpen(port) {
   });
 }
 
+async function getLocalOpenClawStatus() {
+  const runtime = await detectLocalOpenClawRuntime();
+  const [dashboardPortOpen, browserControlPortOpen] = await Promise.all([
+    checkLocalPortOpen(LOCAL_DEFAULT_DASHBOARD_PORT),
+    checkLocalPortOpen(LOCAL_DEFAULT_BROWSER_CONTROL_PORT),
+  ]);
+
+  return {
+    ok: runtime.ok,
+    installed: runtime.installed,
+    binaryPath: runtime.binaryPath,
+    version: runtime.version,
+    dashboardPortOpen,
+    browserControlPortOpen,
+    ready: dashboardPortOpen,
+    logPath: LOCAL_BOOTSTRAP_LOG,
+    error: runtime.error,
+  };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1560,
@@ -308,6 +505,70 @@ app.whenReady().then(() => {
       stopped: true,
       hosts: activeTunnels.map((processInfo) => processInfo.host).filter(Boolean),
     };
+  });
+
+  ipcMain.handle("xiaolanbu:detect-local-openclaw", async () => {
+    return detectLocalOpenClawRuntime();
+  });
+
+  ipcMain.handle("xiaolanbu:get-local-openclaw-status", async () => {
+    return getLocalOpenClawStatus();
+  });
+
+  ipcMain.handle("xiaolanbu:bootstrap-local-openclaw", async (_event, payload) => {
+    if (process.platform !== "darwin") {
+      return {
+        ok: false,
+        error: "当前一键本地部署仅支持 macOS。",
+      };
+    }
+
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.apiKey !== "string" ||
+      typeof payload.baseUrl !== "string" ||
+      typeof payload.modelId !== "string" ||
+      typeof payload.providerId !== "string"
+    ) {
+      return {
+        ok: false,
+        error: "本地部署参数不完整。",
+      };
+    }
+
+    try {
+      const launcherPath = createLocalBootstrapScript({
+        ...payload,
+        gatewayPort: Number(payload.gatewayPort || LOCAL_DEFAULT_DASHBOARD_PORT),
+        browserControlPort: Number(
+          payload.browserControlPort || LOCAL_DEFAULT_BROWSER_CONTROL_PORT,
+        ),
+        gatewayBind: payload.gatewayBind || "loopback",
+      });
+
+      await runSpawnCapture("/bin/bash", [launcherPath], {
+        env: {
+          ...process.env,
+          PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH ?? ""}`,
+        },
+      });
+
+      const status = await getLocalOpenClawStatus();
+      return {
+        ok: status.ready,
+        logPath: LOCAL_BOOTSTRAP_LOG,
+        dashboardUrl: payload.dashboardUrl,
+        browserControlUrl: payload.browserControlUrl,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        logPath: LOCAL_BOOTSTRAP_LOG,
+        error: error instanceof Error ? error.message : "本地部署失败",
+      };
+    }
   });
 
   createWindow();

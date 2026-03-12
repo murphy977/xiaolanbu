@@ -34,6 +34,7 @@ interface CreateDeploymentInput {
   workspaceId: string;
   name: string;
   mode: "local" | "cloud";
+  status?: DeploymentStatus;
   region?: string;
   provider?: string;
   consoleUrl?: string;
@@ -960,7 +961,7 @@ export class StoreService implements OnModuleInit {
       workspaceId: input.workspaceId,
       name: input.name,
       mode: input.mode,
-      status: input.mode === "cloud" ? "creating" : "running",
+      status: input.status ?? (input.mode === "cloud" ? "creating" : "running"),
       provider: input.provider ?? (input.mode === "cloud" ? "aliyun" : "local"),
       region: input.region ?? (input.mode === "cloud" ? "cn-hangzhou" : "local-device"),
       runtimeVersion: "openclaw-0.9.2",

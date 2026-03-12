@@ -6,6 +6,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://47.86.38.197/api/v1")
 );
 const SESSION_STORAGE_KEY = "xiaolanbu_session";
 const SSH_PASSWORD_STORAGE_KEY = "xiaolanbu_ssh_passwords";
+const LOCAL_BOOTSTRAP_STORAGE_KEY = "xiaolanbu_local_bootstraps";
 
 const VIEW_META = {
   home: {
@@ -127,6 +128,9 @@ const DEFAULT_DEPLOYMENT_FORM = {
   internetMaxBandwidthOut: "5",
   instanceTypes: ["ecs.n1.small", "ecs.n4.small", "ecs.t5-lc1m2.small"],
 };
+const DEFAULT_LOCAL_DEPLOYMENT_FORM = {
+  name: "我的本地助手",
+};
 
 function getAppBridge() {
   if (typeof window === "undefined") {
@@ -148,6 +152,40 @@ async function getTunnelStatus() {
   }
 
   return bridge.getTunnelStatus();
+}
+
+async function detectLocalOpenClaw() {
+  const bridge = getAppBridge();
+  if (!bridge?.detectLocalOpenClaw) {
+    return { ok: false, installed: false };
+  }
+
+  return bridge.detectLocalOpenClaw();
+}
+
+async function getLocalOpenClawStatus() {
+  const bridge = getAppBridge();
+  if (!bridge?.getLocalOpenClawStatus) {
+    return {
+      ok: false,
+      installed: false,
+      ready: false,
+      dashboardPortOpen: false,
+      browserControlPortOpen: false,
+      logPath: "",
+    };
+  }
+
+  return bridge.getLocalOpenClawStatus();
+}
+
+async function bootstrapLocalOpenClaw(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.bootstrapLocalOpenClaw) {
+    return { ok: false, error: "当前桌面端不支持本地一键部署。" };
+  }
+
+  return bridge.bootstrapLocalOpenClaw(payload);
 }
 
 function isTunnelReadyForHost(tunnelStatus, publicIp) {
@@ -251,6 +289,68 @@ function clearStoredSshPassword(publicIp) {
   const nextPasswords = { ...getStoredSshPasswords() };
   delete nextPasswords[publicIp];
   window.localStorage.setItem(SSH_PASSWORD_STORAGE_KEY, JSON.stringify(nextPasswords));
+}
+
+function getStoredLocalBootstraps() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_BOOTSTRAP_STORAGE_KEY) ?? "{}";
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setStoredLocalBootstrap(deploymentId, payload) {
+  if (typeof window === "undefined" || !deploymentId || !payload) {
+    return;
+  }
+
+  const next = {
+    ...getStoredLocalBootstraps(),
+    [deploymentId]: payload,
+  };
+  window.localStorage.setItem(LOCAL_BOOTSTRAP_STORAGE_KEY, JSON.stringify(next));
+}
+
+function getStoredLocalBootstrap(deploymentId) {
+  if (!deploymentId) {
+    return null;
+  }
+
+  return getStoredLocalBootstraps()[deploymentId] ?? null;
+}
+
+function buildLocalBootstrapFromDeployment(deployment) {
+  if (!deployment || deployment.mode !== "local" || !deployment.gatewayKey?.secretKey) {
+    return null;
+  }
+
+  const metadata = deployment.metadata ?? {};
+  const access = deployment.access ?? {};
+  return {
+    deploymentId: deployment.id,
+    apiKey: deployment.gatewayKey.secretKey,
+    providerId: metadata.providerId ?? "openai",
+    baseUrl: deployment.gatewayKey.baseUrl,
+    modelId: deployment.gatewayKey.modelId ?? metadata.modelId ?? "qwen35-plus",
+    gatewayPort: metadata.gatewayPort ?? 18789,
+    gatewayBind: metadata.gatewayBind ?? "loopback",
+    browserControlPort: metadata.browserControlPort ?? 18791,
+    gatewayToken:
+      metadata.gatewayToken ??
+      (typeof access.dashboardUrl === "string"
+        ? access.dashboardUrl.split("#token=")[1] ?? ""
+        : ""),
+    dashboardUrl: access.dashboardUrl ?? deployment.consoleUrl ?? "http://127.0.0.1:18789",
+    browserControlUrl: access.browserControlUrl ?? "http://127.0.0.1:18791/",
+    tokenSource: access.tokenSource ?? "desktop-local-bootstrap (gateway.auth.token)",
+    logPath: metadata.logPath ?? "~/Library/Logs/Xiaolanbu/local-bootstrap.log",
+  };
 }
 
 function getTunnelHost(command) {
@@ -760,11 +860,29 @@ function HomeView({ go, wallet, usageSummary, activeDeploymentCount }) {
   );
 }
 
-function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExternal, onCopyText, go, tunnelStatus }) {
+function AssistantView({
+  deployments,
+  onLaunchTunnel,
+  onStopTunnel,
+  onOpenExternal,
+  onCopyText,
+  onBootstrapLocal,
+  go,
+  tunnelStatus,
+  localRuntimeStatus,
+}) {
   const runningDeployments = deployments.filter((item) => item.status === "running");
-  const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
+  const localDeployment = runningDeployments.find((item) => item.mode === "local") ?? null;
+  const cloudDeployment =
+    runningDeployments.find((item) => item.mode === "cloud") ??
+    deployments.find((item) => item.mode === "cloud") ??
+    null;
+  const primaryDeployment = localDeployment ?? cloudDeployment ?? deployments[0] ?? null;
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
-  const tunnelReady = isTunnelReadyForHost(tunnelStatus, publicIp);
+  const isLocalDeployment = primaryDeployment?.mode === "local";
+  const tunnelReady = isLocalDeployment
+    ? Boolean(localRuntimeStatus?.dashboardPortOpen)
+    : isTunnelReadyForHost(tunnelStatus, publicIp);
   const tunnelCommand = getNormalizedTunnelCommand(
     publicIp
       ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${publicIp}`
@@ -792,22 +910,34 @@ function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExtern
               <strong>当前实例</strong>
               <span>{primaryDeployment ? `${primaryDeployment.name} · ${primaryDeployment.status}` : "还没有云端实例"}</span>
             </div>
-            <div className="mini-stack__item">
-              <strong>公网地址</strong>
-              <span>{publicIp || "实例创建完成后会显示公网 IP"}</span>
-            </div>
-            <div className="mini-stack__item">
-              <strong>使用方式</strong>
-              <span>
-                {tunnelReady ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。" : "先打开 Tunnel，再打开本地控制台开始聊天。"}
-              </span>
-            </div>
-            <div className="mini-stack__item">
-              <strong>当前 Tunnel</strong>
-              <span>{tunnelStatus.host || "尚未连接到任何实例"}</span>
-            </div>
-          </div>
-        </article>
+                <div className="mini-stack__item">
+                  <strong>公网地址</strong>
+                  <span>{isLocalDeployment ? "本机部署，无需公网 IP" : publicIp || "实例创建完成后会显示公网 IP"}</span>
+                </div>
+                <div className="mini-stack__item">
+                  <strong>使用方式</strong>
+                  <span>
+                    {isLocalDeployment
+                      ? tunnelReady
+                        ? "本地控制台已经就绪，现在可以直接开始聊天。"
+                        : "先完成一键本地部署，本机就会直接生成控制台。"
+                      : tunnelReady
+                        ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。"
+                        : "先打开 Tunnel，再打开本地控制台开始聊天。"}
+                  </span>
+                </div>
+                <div className="mini-stack__item">
+                  <strong>{isLocalDeployment ? "本地状态" : "当前 Tunnel"}</strong>
+                  <span>
+                    {isLocalDeployment
+                      ? localRuntimeStatus?.ready
+                        ? "本地 OpenClaw 已就绪"
+                        : "本地 OpenClaw 尚未就绪"
+                      : tunnelStatus.host || "尚未连接到任何实例"}
+                  </span>
+                </div>
+              </div>
+            </article>
 
         <article className="chat-surface">
           <div className="chat-toolbar">
@@ -829,25 +959,35 @@ function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExtern
             <>
               <div className="chat-stream">
                 <div className="bubble bubble--assistant">
-                  {tunnelReady
-                    ? "Tunnel 已经连通，小懒布可以直接把你带到真实控制台。"
-                    : "第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。"}
+                  {isLocalDeployment
+                    ? tunnelReady
+                      ? "本地 OpenClaw 已经就绪，小懒布可以直接把你带到真实控制台。"
+                      : "先完成一键本地部署，小懒布会在本机自动安装、初始化并启动 OpenClaw。"
+                    : tunnelReady
+                      ? "Tunnel 已经连通，小懒布可以直接把你带到真实控制台。"
+                      : "第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。"}
                 </div>
                 <div className="bubble bubble--assistant">
-                  {tunnelReady
-                    ? "现在点击“直接开始聊天”，就会打开本地控制台。"
-                    : "第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。"}
+                  {isLocalDeployment
+                    ? tunnelReady
+                      ? "现在点击“直接开始聊天”，就会打开本地控制台。"
+                      : "安装成功后，桌面端会直接把你带到本地控制台，不需要 SSH Tunnel。"
+                    : tunnelReady
+                      ? "现在点击“直接开始聊天”，就会打开本地控制台。"
+                      : "第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。"}
                 </div>
                 <div className="bubble bubble--user">
-                  当前实例：{primaryDeployment.name} · {publicIp || "无公网 IP"}
+                  当前实例：{primaryDeployment.name} · {isLocalDeployment ? "本地设备" : publicIp || "无公网 IP"}
                 </div>
               </div>
 
               <div className="pref-list assistant-pref-list">
-                <div className="pref-row">
-                  <span>SSH Tunnel</span>
-                  <strong>{tunnelCommand || "--"}</strong>
-                </div>
+                {!isLocalDeployment ? (
+                  <div className="pref-row">
+                    <span>SSH Tunnel</span>
+                    <strong>{tunnelCommand || "--"}</strong>
+                  </div>
+                ) : null}
                 <div className="pref-row">
                   <span>本地控制台</span>
                   <strong>{dashboardUrl || "--"}</strong>
@@ -862,11 +1002,15 @@ function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExtern
                 <button
                   className="primary-button small-cta"
                   onClick={() =>
-                    tunnelReady ? onOpenExternal(dashboardUrl) : onLaunchTunnel(tunnelCommand)
+                    tunnelReady
+                      ? onOpenExternal(dashboardUrl)
+                      : isLocalDeployment
+                        ? onBootstrapLocal(primaryDeployment)
+                        : onLaunchTunnel(tunnelCommand)
                   }
-                  disabled={tunnelReady ? !dashboardUrl : !tunnelCommand}
+                  disabled={tunnelReady ? !dashboardUrl : isLocalDeployment ? false : !tunnelCommand}
                 >
-                  {tunnelReady ? "直接开始聊天" : "先打开 Tunnel"}
+                  {tunnelReady ? "直接开始聊天" : isLocalDeployment ? "一键部署到本机" : "先打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -882,20 +1026,24 @@ function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExtern
                 >
                   Browser Control
                 </button>
-                <button
-                  className="ghost-button small"
-                  onClick={() => onCopyText(tunnelCommand, "Tunnel 命令已复制")}
-                  disabled={!tunnelCommand}
-                >
-                  复制 Tunnel
-                </button>
-                <button
-                  className="ghost-button small"
-                  onClick={onStopTunnel}
-                  disabled={!tunnelStatus.connected}
-                >
-                  关闭 Tunnel
-                </button>
+                {!isLocalDeployment ? (
+                  <>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => onCopyText(tunnelCommand, "Tunnel 命令已复制")}
+                      disabled={!tunnelCommand}
+                    >
+                      复制 Tunnel
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={onStopTunnel}
+                      disabled={!tunnelStatus.connected}
+                    >
+                      关闭 Tunnel
+                    </button>
+                  </>
+                ) : null}
               </div>
             </>
           ) : (
@@ -1231,8 +1379,21 @@ function SettingsView({
   onDeploymentPasswordSave,
   onDeploymentPasswordClear,
   tunnelStatus,
+  localDeploymentForm,
+  onLocalDeploymentFormChange,
+  localRuntimeStatus,
+  localDeployPending,
+  localDeployError,
+  localDeployFeedback,
+  localDeployResult,
+  onCreateLocalDeployment,
+  onRepairLocalDeployment,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
+  const localDeployment =
+    deployments.find((item) => item.mode === "local" && item.status === "running") ??
+    deployments.find((item) => item.mode === "local") ??
+    null;
   const activeActionDeployment = actionPendingId
     ? deployments.find((item) => item.id === actionPendingId)
     : null;
@@ -1250,6 +1411,11 @@ function SettingsView({
   const walletBalance = typeof wallet?.balanceCny === "number" ? wallet.balanceCny : 0;
   const createBlockedByBalance = walletBalance <= 0;
   const lowBalanceWarning = walletBalance > 0 && walletBalance < 10;
+  const localBootstrapLogPath =
+    localDeployResult?.bootstrap?.logPath ??
+    localDeployment?.metadata?.logPath ??
+    localRuntimeStatus?.logPath ??
+    "~/Library/Logs/Xiaolanbu/local-bootstrap.log";
 
   return (
     <section className="view view--settings is-visible">
@@ -1314,6 +1480,110 @@ function SettingsView({
             </button>
           </div>
           {passwordError ? <div className="inline-notice inline-notice--error">{passwordError}</div> : null}
+        </article>
+
+        <article className="card settings-card settings-card--create">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">一键部署到本机</div>
+              <div className="card-subtitle">
+                小懒布会在你的 Mac 上安装并初始化 OpenClaw，本地运行控制台，模型调用仍然走你的线上网关计费。
+              </div>
+            </div>
+            <button
+              className="primary-button small"
+              onClick={onCreateLocalDeployment}
+              disabled={localDeployPending}
+            >
+              {localDeployPending ? "部署中..." : "立即部署到本机"}
+            </button>
+          </div>
+
+          {localDeployError ? (
+            <div className="inline-notice inline-notice--error">{localDeployError}</div>
+          ) : null}
+          {localDeployFeedback ? (
+            <div className="inline-notice inline-notice--info">{localDeployFeedback}</div>
+          ) : null}
+
+          <div className="create-grid">
+            <label className="field">
+              <span>本地实例名称</span>
+              <input
+                type="text"
+                value={localDeploymentForm.name}
+                onChange={(event) => onLocalDeploymentFormChange("name", event.target.value)}
+                placeholder="例如：我的本地助手"
+              />
+            </label>
+            <label className="field">
+              <span>运行时状态</span>
+              <input
+                type="text"
+                value={
+                  localRuntimeStatus.ready
+                    ? "本地控制台已就绪"
+                    : localRuntimeStatus.installed
+                      ? "运行时已安装，等待初始化"
+                      : "尚未安装 OpenClaw 运行时"
+                }
+                disabled
+              />
+            </label>
+          </div>
+
+          <div className="pref-list">
+            <div className="pref-row">
+              <span>本地网关</span>
+              <strong>{localRuntimeStatus.dashboardPortOpen ? "127.0.0.1:18789 已连通" : "127.0.0.1:18789 待启动"}</strong>
+            </div>
+            <div className="pref-row">
+              <span>Browser Control</span>
+              <strong>{localRuntimeStatus.browserControlPortOpen ? "127.0.0.1:18791 已连通" : "127.0.0.1:18791 待启动"}</strong>
+            </div>
+            <div className="pref-row">
+              <span>本地运行时</span>
+              <strong>
+                {localRuntimeStatus.installed
+                  ? `${localRuntimeStatus.binaryPath || "openclaw"}${localRuntimeStatus.version ? ` · ${localRuntimeStatus.version}` : ""}`
+                  : "尚未检测到 OpenClaw"}
+              </strong>
+            </div>
+            <div className="pref-row">
+              <span>日志路径</span>
+              <strong>{localBootstrapLogPath}</strong>
+            </div>
+          </div>
+
+          <div className="result-actions">
+            <button
+              className="ghost-button small"
+              onClick={() => onOpenExternal(localDeployment?.access?.dashboardUrl ?? "http://127.0.0.1:18789")}
+              disabled={!localRuntimeStatus.dashboardPortOpen}
+            >
+              打开本地控制台
+            </button>
+            <button
+              className="ghost-button small"
+              onClick={() => onOpenExternal(localDeployment?.access?.browserControlUrl ?? "http://127.0.0.1:18791/")}
+              disabled={!localRuntimeStatus.browserControlPortOpen}
+            >
+              Browser Control
+            </button>
+            <button
+              className="ghost-button small"
+              onClick={() => onCopyText(localBootstrapLogPath, "日志路径已复制")}
+            >
+              复制日志路径
+            </button>
+            <button
+              className="ghost-button small"
+              onClick={() => onRepairLocalDeployment(localDeployment)}
+              disabled={localDeployPending || !localDeployment}
+            >
+              修复本地部署
+            </button>
+          </div>
         </article>
 
         <article className="card settings-card settings-card--create">
@@ -1821,10 +2091,15 @@ function SettingsView({
                   ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
                   : deployment.access?.sshTunnel ?? "",
               );
-              const deploymentTunnelReady = isTunnelReadyForHost(tunnelStatus, deploymentPublicIp);
+              const deploymentTunnelReady =
+                deployment.mode === "local"
+                  ? Boolean(localRuntimeStatus?.dashboardPortOpen)
+                  : isTunnelReadyForHost(tunnelStatus, deploymentPublicIp);
               const deploymentStoredPassword = getStoredSshPassword(deploymentPublicIp);
               const deploymentPasswordDraft =
                 sshPasswordDrafts[deployment.id] ?? deploymentStoredPassword;
+              const localDeploymentReady =
+                deployment.mode === "local" && Boolean(localRuntimeStatus?.ready);
 
               return (
                 <div className="deployment-card" key={deployment.id}>
@@ -1902,13 +2177,27 @@ function SettingsView({
                     <button
                       className="primary-button small"
                       onClick={() =>
-                        deploymentTunnelReady
+                        deployment.mode === "local"
+                          ? onOpenExternal(deploymentDashboardUrl)
+                          : deploymentTunnelReady
                           ? onOpenExternal(deploymentDashboardUrl)
                           : onLaunchTunnel(deploymentTunnelCommand)
                       }
-                      disabled={deploymentTunnelReady ? !deploymentDashboardUrl : !deploymentTunnelCommand}
+                      disabled={
+                        deployment.mode === "local"
+                          ? !deploymentDashboardUrl || !localDeploymentReady
+                          : deploymentTunnelReady
+                            ? !deploymentDashboardUrl
+                            : !deploymentTunnelCommand
+                      }
                     >
-                      {deploymentTunnelReady ? "直接开始聊天" : "打开 Tunnel"}
+                      {deployment.mode === "local"
+                        ? localDeploymentReady
+                          ? "直接开始聊天"
+                          : "等待本地部署完成"
+                        : deploymentTunnelReady
+                          ? "直接开始聊天"
+                          : "打开 Tunnel"}
                     </button>
                     <button
                       className="ghost-button small"
@@ -1924,55 +2213,75 @@ function SettingsView({
                     >
                       Browser Control
                     </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onCopyText(deploymentTunnelCommand, "Tunnel 命令已复制")}
-                      disabled={!deploymentTunnelCommand}
-                    >
-                      复制 Tunnel
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={onStopTunnel}
-                      disabled={!deploymentTunnelReady}
-                    >
-                      关闭 Tunnel
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onCopyText(deploymentPublicIp, "公网 IP 已复制")}
-                      disabled={!deploymentPublicIp}
-                    >
-                      复制公网 IP
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onDeploymentAction(deployment.id, "start")}
-                      disabled={actionPendingId === deployment.id || deployment.status === "running"}
-                    >
-                      {actionPendingId === deployment.id ? "处理中..." : "启动"}
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onDeploymentAction(deployment.id, "stop")}
-                      disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
-                    >
-                      {actionPendingId === deployment.id ? "处理中..." : "停止"}
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onDeploymentAction(deployment.id, "restart")}
-                      disabled={actionPendingId === deployment.id || deployment.status !== "running"}
-                    >
-                      {actionPendingId === deployment.id ? "处理中..." : "重启"}
-                    </button>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => onDeploymentAction(deployment.id, "destroy")}
-                      disabled={actionPendingId === deployment.id}
-                    >
-                      {actionPendingId === deployment.id ? "处理中..." : "销毁"}
-                    </button>
+                    {deployment.mode === "cloud" ? (
+                      <>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onCopyText(deploymentTunnelCommand, "Tunnel 命令已复制")}
+                          disabled={!deploymentTunnelCommand}
+                        >
+                          复制 Tunnel
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={onStopTunnel}
+                          disabled={!deploymentTunnelReady}
+                        >
+                          关闭 Tunnel
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onCopyText(deploymentPublicIp, "公网 IP 已复制")}
+                          disabled={!deploymentPublicIp}
+                        >
+                          复制公网 IP
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentAction(deployment.id, "start")}
+                          disabled={actionPendingId === deployment.id || deployment.status === "running"}
+                        >
+                          {actionPendingId === deployment.id ? "处理中..." : "启动"}
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentAction(deployment.id, "stop")}
+                          disabled={actionPendingId === deployment.id || deployment.status === "stopped"}
+                        >
+                          {actionPendingId === deployment.id ? "处理中..." : "停止"}
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentAction(deployment.id, "restart")}
+                          disabled={actionPendingId === deployment.id || deployment.status !== "running"}
+                        >
+                          {actionPendingId === deployment.id ? "处理中..." : "重启"}
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentAction(deployment.id, "destroy")}
+                          disabled={actionPendingId === deployment.id}
+                        >
+                          {actionPendingId === deployment.id ? "处理中..." : "销毁"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onCopyText(localBootstrapLogPath, "日志路径已复制")}
+                        >
+                          复制日志路径
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onRepairLocalDeployment(deployment)}
+                          disabled={localDeployPending}
+                        >
+                          {localDeployPending ? "修复中..." : "修复本地部署"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -2056,6 +2365,7 @@ export function App() {
     },
   });
   const [createForm, setCreateForm] = useState(DEFAULT_DEPLOYMENT_FORM);
+  const [localDeploymentForm, setLocalDeploymentForm] = useState(DEFAULT_LOCAL_DEPLOYMENT_FORM);
   const [workspaceCreateName, setWorkspaceCreateName] = useState("");
   const [workspaceRenameName, setWorkspaceRenameName] = useState("");
   const [workspaceState, setWorkspaceState] = useState({
@@ -2090,6 +2400,10 @@ export function App() {
     createResult: null,
     createDiagnostics: [],
     createFeedback: "",
+    localDeployPending: false,
+    localDeployError: "",
+    localDeployFeedback: "",
+    localDeployResult: null,
   });
   const [memberInviteEmail, setMemberInviteEmail] = useState("");
   const [sshPasswordDrafts, setSshPasswordDrafts] = useState({});
@@ -2099,6 +2413,17 @@ export function App() {
     browserControlPortOpen: false,
     host: "",
     pid: null,
+  });
+  const [localRuntimeStatus, setLocalRuntimeStatus] = useState({
+    ok: false,
+    installed: false,
+    ready: false,
+    dashboardPortOpen: false,
+    browserControlPortOpen: false,
+    binaryPath: "",
+    version: "",
+    logPath: "",
+    error: "",
   });
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
@@ -2300,6 +2625,10 @@ export function App() {
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
+        localDeployPending: false,
+        localDeployError: "",
+        localDeployFeedback: "",
+        localDeployResult: null,
       }));
       setProfileForm({ displayName: "" });
       setPasswordForm({
@@ -2308,6 +2637,7 @@ export function App() {
         confirmPassword: "",
       });
       setMemberInviteEmail("");
+      setLocalDeploymentForm(DEFAULT_LOCAL_DEPLOYMENT_FORM);
     };
 
     window.addEventListener("xiaolanbu:session-expired", handleSessionExpired);
@@ -2373,6 +2703,54 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshLocalRuntimeStatus = async () => {
+      try {
+        const result = await getLocalOpenClawStatus();
+        if (cancelled) {
+          return;
+        }
+
+        setLocalRuntimeStatus({
+          ok: Boolean(result?.ok),
+          installed: Boolean(result?.installed),
+          ready: Boolean(result?.ready),
+          dashboardPortOpen: Boolean(result?.dashboardPortOpen),
+          browserControlPortOpen: Boolean(result?.browserControlPortOpen),
+          binaryPath: typeof result?.binaryPath === "string" ? result.binaryPath : "",
+          version: typeof result?.version === "string" ? result.version : "",
+          logPath: typeof result?.logPath === "string" ? result.logPath : "",
+          error: typeof result?.error === "string" ? result.error : "",
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setLocalRuntimeStatus((current) => ({
+          ...current,
+          ok: false,
+          ready: false,
+          dashboardPortOpen: false,
+          browserControlPortOpen: false,
+          error: error instanceof Error ? error.message : "本地运行时状态暂时不可用。",
+        }));
+      }
+    };
+
+    void refreshLocalRuntimeStatus();
+    const timer = window.setInterval(() => {
+      void refreshLocalRuntimeStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const handleWorkspaceSwitch = async (workspaceId) => {
     if (!workspaceId || workspaceId === activeWorkspaceId) {
       return;
@@ -2419,6 +2797,10 @@ export function App() {
         createResult: null,
         createDiagnostics: [],
         createFeedback: "",
+        localDeployPending: false,
+        localDeployError: "",
+        localDeployFeedback: "",
+        localDeployResult: null,
         error: "",
         workspaceCreateError: "",
         workspaceRenameError: "",
@@ -2431,6 +2813,7 @@ export function App() {
         createError: "",
       }));
       setMemberInviteEmail("");
+      setLocalDeploymentForm(DEFAULT_LOCAL_DEPLOYMENT_FORM);
     } catch (error) {
       setAuthState((current) => ({
         ...current,
@@ -2588,6 +2971,10 @@ export function App() {
       createResult: null,
       createDiagnostics: [],
       createFeedback: "",
+      localDeployPending: false,
+      localDeployError: "",
+      localDeployFeedback: "",
+      localDeployResult: null,
     }));
     setProfileForm({ displayName: "" });
     setPasswordForm({
@@ -2596,6 +2983,7 @@ export function App() {
       confirmPassword: "",
     });
     setMemberInviteEmail("");
+    setLocalDeploymentForm(DEFAULT_LOCAL_DEPLOYMENT_FORM);
   };
 
   const handleProfileFieldChange = (field, value) => {
@@ -3032,6 +3420,172 @@ export function App() {
       ...current,
       [field]: value,
     }));
+  };
+
+  const handleLocalDeploymentFormChange = (field, value) => {
+    setLocalDeploymentForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+    setWorkspaceState((current) => ({
+      ...current,
+      localDeployError: "",
+    }));
+  };
+
+  const patchDeploymentStatus = async (deploymentId, status) => {
+    if (!deploymentId) {
+      return;
+    }
+
+    await fetchJson(`/deployments/${deploymentId}/status`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status }),
+    });
+  };
+
+  const runLocalBootstrapFlow = async (deployment, bootstrapPayload) => {
+    const bootstrapResult = await bootstrapLocalOpenClaw(bootstrapPayload);
+    if (!bootstrapResult?.ok) {
+      await patchDeploymentStatus(deployment.id, "error");
+      throw new Error(
+        bootstrapResult?.error ||
+          "本地 OpenClaw 初始化失败，请稍后再试。",
+      );
+    }
+
+    await patchDeploymentStatus(deployment.id, "running");
+    await refreshWorkspaceData({ withSync: true });
+
+    setWorkspaceState((current) => ({
+      ...current,
+      localDeployPending: false,
+      localDeployError: "",
+      localDeployResult: {
+        deployment,
+        bootstrap: bootstrapPayload,
+        runtime: bootstrapResult,
+      },
+      localDeployFeedback: "本地 OpenClaw 已部署完成，现在可以直接开始聊天。",
+    }));
+
+    return bootstrapResult;
+  };
+
+  const handleCreateLocalDeployment = async () => {
+    if (!activeWorkspaceId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployError: "当前没有可用工作区，请稍后再试。",
+      }));
+      return;
+    }
+
+    if (!localDeploymentForm.name.trim()) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployError: "请先填写本地实例名称。",
+      }));
+      return;
+    }
+
+    const existingLocalDeployment = workspaceState.deployments.find(
+      (item) => item.mode === "local" && item.status !== "destroyed",
+    );
+    if (existingLocalDeployment) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployError: "当前工作区已经存在本地部署，请直接修复或继续使用。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      localDeployPending: true,
+      localDeployError: "",
+      localDeployFeedback: "",
+      localDeployResult: null,
+    }));
+
+    try {
+      const result = await fetchJson("/deployments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: activeWorkspaceId,
+          name: localDeploymentForm.name.trim(),
+          mode: "local",
+          openclawGatewayPort: 18789,
+          openclawGatewayBind: "loopback",
+        }),
+      });
+
+      const bootstrapPayload = result.bootstrap;
+      setStoredLocalBootstrap(result.deployment?.id, bootstrapPayload);
+
+      await runLocalBootstrapFlow(result.deployment, bootstrapPayload);
+      setCurrentView("assistant");
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployPending: false,
+        localDeployError:
+          error instanceof Error ? error.message : "本地部署失败，请稍后再试。",
+        localDeployFeedback: localRuntimeStatus?.logPath
+          ? `可以查看日志：${localRuntimeStatus.logPath}`
+          : current.localDeployFeedback,
+      }));
+      await refreshWorkspaceData();
+    }
+  };
+
+  const handleRepairLocalDeployment = async (deployment) => {
+    if (!deployment) {
+      return;
+    }
+
+    const bootstrapPayload =
+      getStoredLocalBootstrap(deployment.id) ??
+      buildLocalBootstrapFromDeployment(deployment);
+
+    if (!bootstrapPayload) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployError: "缺少本地部署配置，请重新创建本地部署。",
+      }));
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      localDeployPending: true,
+      localDeployError: "",
+      localDeployFeedback: "正在修复本地 OpenClaw 部署...",
+      localDeployResult: null,
+    }));
+
+    try {
+      setStoredLocalBootstrap(deployment.id, bootstrapPayload);
+      await runLocalBootstrapFlow(deployment, bootstrapPayload);
+      setCurrentView("assistant");
+    } catch (error) {
+      setWorkspaceState((current) => ({
+        ...current,
+        localDeployPending: false,
+        localDeployError:
+          error instanceof Error ? error.message : "修复本地部署失败，请稍后再试。",
+        localDeployFeedback: bootstrapPayload?.logPath
+          ? `可以查看日志：${bootstrapPayload.logPath}`
+          : current.localDeployFeedback,
+      }));
+      await refreshWorkspaceData();
+    }
   };
 
   const handleDeploymentPasswordDraftChange = (deploymentId, value) => {
@@ -3548,8 +4102,10 @@ export function App() {
               onStopTunnel={handleStopTunnel}
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
+              onBootstrapLocal={handleCreateLocalDeployment}
               go={setCurrentView}
               tunnelStatus={tunnelStatus}
+              localRuntimeStatus={localRuntimeStatus}
             />
           ) : null}
           {currentView === "discover" ? <DiscoverView /> : null}
@@ -3637,6 +4193,15 @@ export function App() {
               onDeploymentPasswordSave={handleDeploymentPasswordSave}
               onDeploymentPasswordClear={handleDeploymentPasswordClear}
               tunnelStatus={tunnelStatus}
+              localDeploymentForm={localDeploymentForm}
+              onLocalDeploymentFormChange={handleLocalDeploymentFormChange}
+              localRuntimeStatus={localRuntimeStatus}
+              localDeployPending={workspaceState.localDeployPending}
+              localDeployError={workspaceState.localDeployError}
+              localDeployFeedback={workspaceState.localDeployFeedback}
+              localDeployResult={workspaceState.localDeployResult}
+              onCreateLocalDeployment={handleCreateLocalDeployment}
+              onRepairLocalDeployment={handleRepairLocalDeployment}
             />
           ) : null}
         </main>
