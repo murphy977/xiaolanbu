@@ -406,16 +406,18 @@ export class DeploymentsService {
   }
 
   private resolveDiskCandidates(body: CreateDeploymentDto, instanceType: string) {
+    const allowExplicitDiskCategory = process.env.XLB_ALLOW_EXPLICIT_DISK_CATEGORY === "true";
+    const requestedDiskCategory = allowExplicitDiskCategory ? body.systemDiskCategory : undefined;
     const base = {
-      systemDiskCategory: body.systemDiskCategory,
+      systemDiskCategory: requestedDiskCategory,
       systemDiskSize: body.systemDiskSize,
-      usesExplicitSystemDiskCategory: Boolean(body.systemDiskCategory),
-      attemptLabel: body.systemDiskCategory
-        ? `${instanceType} · ${body.systemDiskCategory}`
+      usesExplicitSystemDiskCategory: Boolean(requestedDiskCategory),
+      attemptLabel: requestedDiskCategory
+        ? `${instanceType} · ${requestedDiskCategory}`
         : instanceType,
     };
 
-    if (!body.systemDiskCategory) {
+    if (!requestedDiskCategory) {
       return [base];
     }
 
