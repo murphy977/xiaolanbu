@@ -376,69 +376,128 @@ function AuthView({
   onAuthSubmit,
   onAuthModeChange,
 }) {
+  const isLogin = authMode === "login";
+
   return (
     <div className="auth-shell">
       <div className="ambient ambient-a"></div>
       <div className="ambient ambient-b"></div>
       <div className="ambient ambient-c"></div>
-      <section className="auth-card">
-        <div className="eyebrow">Xiaolanbu Cloud</div>
-        <h1 className="auth-title">先登录，再把你的实例、余额和控制台真正绑定到自己名下。</h1>
-        <p className="auth-subtitle">
-          这一版已经支持注册、登录和工作区切换。登录后，桌面端会只拉你自己的工作区、账单和云端实例。
-        </p>
+      <section className="auth-frame">
+        <article className="auth-stage">
+          <div className="auth-stage__topline">Xiaolanbu Cloud</div>
+          <div className="auth-stage__hero">
+            <div className="auth-mascot" aria-hidden="true">
+              <div className="auth-mascot__halo"></div>
+              <div className="auth-mascot__body">
+                <div className="auth-mascot__face">
+                  <span></span>
+                  <span></span>
+                </div>
+                <div className="auth-mascot__cheek auth-mascot__cheek--left"></div>
+                <div className="auth-mascot__cheek auth-mascot__cheek--right"></div>
+              </div>
+              <div className="auth-mascot__leaf auth-mascot__leaf--left"></div>
+              <div className="auth-mascot__leaf auth-mascot__leaf--right"></div>
+              <div className="auth-mascot__shadow"></div>
+            </div>
+            <div className="auth-stage__copy">
+              <h1 className="auth-stage__title">把你的实例、余额和聊天控制台，收进同一个舒服的入口里。</h1>
+              <p className="auth-stage__subtitle">
+                小懒布会替你管理云端实例、钱包余额和控制入口。登录之后，桌面端只会显示你自己的工作区、实例和账单。
+              </p>
+            </div>
+          </div>
+          <div className="auth-stage__rail">
+            <div className="auth-rail-card auth-rail-card--warm">
+              <strong>云端部署</strong>
+              <span>一键创建实例，保存密码后可以直接后台连 Tunnel。</span>
+            </div>
+            <div className="auth-rail-card auth-rail-card--mint">
+              <strong>开始聊天</strong>
+              <span>实例就绪后，直接进入真实 OpenClaw 控制台，不再停留在演示页。</span>
+            </div>
+          </div>
+          <div className="auth-stage__moments">
+            <div className="auth-stage__moment">
+              <span>今天的工作流</span>
+              <strong>登录 → 云部署 → Tunnel → 直接聊天</strong>
+            </div>
+            <div className="auth-stage__moment auth-stage__moment--ghost">
+              <span>适合谁</span>
+              <strong>个人用户、团队成员、需要独立实例的托管场景</strong>
+            </div>
+          </div>
+        </article>
 
-        <div className="auth-switch">
-          <button
-            className={`ghost-button small ${authMode === "login" ? "is-selected" : ""}`}
-            onClick={() => onAuthModeChange("login")}
-          >
-            登录
-          </button>
-          <button
-            className={`ghost-button small ${authMode === "register" ? "is-selected" : ""}`}
-            onClick={() => onAuthModeChange("register")}
-          >
-            注册
-          </button>
-        </div>
+        <article className="auth-card">
+          <div className="auth-card__header">
+            <div className="eyebrow">欢迎回来</div>
+            <h2 className="auth-title">{isLogin ? "登录小懒布" : "创建你的账户"}</h2>
+            <p className="auth-subtitle">
+              {isLogin
+                ? "继续查看你的工作区、实例、余额和控制台入口。"
+                : "注册后会自动获得自己的工作区，后续账单和实例都归到你名下。"}
+            </p>
+          </div>
 
-        {authError ? <div className="inline-notice inline-notice--error">{authError}</div> : null}
+          <div className="auth-switch">
+            <button
+              className={`ghost-button small ${authMode === "login" ? "is-selected" : ""}`}
+              onClick={() => onAuthModeChange("login")}
+            >
+              登录
+            </button>
+            <button
+              className={`ghost-button small ${authMode === "register" ? "is-selected" : ""}`}
+              onClick={() => onAuthModeChange("register")}
+            >
+              注册
+            </button>
+          </div>
 
-        <div className="auth-form">
-          {authMode === "register" ? (
+          {authError ? <div className="inline-notice inline-notice--error">{authError}</div> : null}
+
+          <div className="auth-form">
+            {!isLogin ? (
+              <label className="field">
+                <span>昵称</span>
+                <input
+                  type="text"
+                  value={authForm.displayName}
+                  onChange={(event) => onAuthFormChange("displayName", event.target.value)}
+                  placeholder="例如：午松 / 内容组"
+                />
+              </label>
+            ) : null}
             <label className="field">
-              <span>昵称</span>
+              <span>邮箱</span>
               <input
-                type="text"
-                value={authForm.displayName}
-                onChange={(event) => onAuthFormChange("displayName", event.target.value)}
-                placeholder="例如：午松"
+                type="email"
+                value={authForm.email}
+                onChange={(event) => onAuthFormChange("email", event.target.value)}
+                placeholder="you@xiaolanbu.app"
               />
             </label>
-          ) : null}
-          <label className="field">
-            <span>邮箱</span>
-            <input
-              type="email"
-              value={authForm.email}
-              onChange={(event) => onAuthFormChange("email", event.target.value)}
-              placeholder="you@xiaolanbu.app"
-            />
-          </label>
-          <label className="field">
-            <span>密码</span>
-            <input
-              type="password"
-              value={authForm.password}
-              onChange={(event) => onAuthFormChange("password", event.target.value)}
-              placeholder="至少 8 位"
-            />
-          </label>
-          <button className="primary-button" onClick={onAuthSubmit} disabled={authPending}>
-            {authPending ? "处理中..." : authMode === "login" ? "登录小懒布" : "创建账号"}
-          </button>
-        </div>
+            <label className="field">
+              <span>密码</span>
+              <input
+                type="password"
+                value={authForm.password}
+                onChange={(event) => onAuthFormChange("password", event.target.value)}
+                placeholder="至少 8 位，建议字母数字组合"
+              />
+            </label>
+            <button className="primary-button auth-submit" onClick={onAuthSubmit} disabled={authPending}>
+              {authPending ? "处理中..." : isLogin ? "登录并进入工作台" : "创建账户并进入工作台"}
+            </button>
+          </div>
+
+          <div className="auth-footer-note">
+            <span>{isLogin ? "首次登录后可以直接创建云端实例。" : "注册完成后会自动登录。"} </span>
+            <strong>桌面端已接入真实后端和云端部署流程。</strong>
+          </div>
+        </article>
       </section>
     </div>
   );
