@@ -212,6 +212,16 @@ function getStoredSshPassword(publicIp) {
   return getStoredSshPasswords()[publicIp] ?? "";
 }
 
+function clearStoredSshPassword(publicIp) {
+  if (typeof window === "undefined" || !publicIp) {
+    return;
+  }
+
+  const nextPasswords = { ...getStoredSshPasswords() };
+  delete nextPasswords[publicIp];
+  window.localStorage.setItem(SSH_PASSWORD_STORAGE_KEY, JSON.stringify(nextPasswords));
+}
+
 function getTunnelHost(command) {
   if (typeof command !== "string") {
     return "";
@@ -1053,6 +1063,10 @@ function SettingsView({
   onMemberInvite,
   onMemberRoleChange,
   onMemberRemove,
+  sshPasswordDrafts,
+  onDeploymentPasswordDraftChange,
+  onDeploymentPasswordSave,
+  onDeploymentPasswordClear,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
   const activeActionDeployment = actionPendingId
@@ -1624,6 +1638,9 @@ function SettingsView({
                   ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
                   : deployment.access?.sshTunnel ?? "",
               );
+              const deploymentStoredPassword = getStoredSshPassword(deploymentPublicIp);
+              const deploymentPasswordDraft =
+                sshPasswordDrafts[deployment.id] ?? deploymentStoredPassword;
 
               return (
                 <div className="deployment-card" key={deployment.id}>
@@ -1662,6 +1679,41 @@ function SettingsView({
                       <strong>{deploymentDashboardUrl || "--"}</strong>
                     </div>
                   </div>
+                  {deployment.mode === "cloud" && deploymentPublicIp ? (
+                    <div className="member-invite deployment-password-box">
+                      <label className="field">
+                        <span>本地保存 SSH 密码</span>
+                        <input
+                          type="password"
+                          value={deploymentPasswordDraft}
+                          onChange={(event) =>
+                            onDeploymentPasswordDraftChange(deployment.id, event.target.value)
+                          }
+                          placeholder={
+                            deploymentStoredPassword
+                              ? "已保存，可直接更新"
+                              : "录入一次，后续 Tunnel 可自动输密码"
+                          }
+                        />
+                      </label>
+                      <div className="result-actions">
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentPasswordSave(deployment.id, deploymentPublicIp)}
+                          disabled={!deploymentPasswordDraft.trim()}
+                        >
+                          保存密码
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => onDeploymentPasswordClear(deployment.id, deploymentPublicIp)}
+                          disabled={!deploymentStoredPassword}
+                        >
+                          清除已保存密码
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="result-actions">
                     <button
                       className="primary-button small"
@@ -1845,6 +1897,7 @@ export function App() {
     createFeedback: "",
   });
   const [memberInviteEmail, setMemberInviteEmail] = useState("");
+  const [sshPasswordDrafts, setSshPasswordDrafts] = useState({});
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
   const activeWorkspace =
@@ -2736,6 +2789,42 @@ export function App() {
     }));
   };
 
+  const handleDeploymentPasswordDraftChange = (deploymentId, value) => {
+    setSshPasswordDrafts((current) => ({
+      ...current,
+      [deploymentId]: value,
+    }));
+  };
+
+  const handleDeploymentPasswordSave = (deploymentId, publicIp) => {
+    const password = sshPasswordDrafts[deploymentId]?.trim() ?? "";
+    if (!publicIp || !password) {
+      return;
+    }
+
+    setStoredSshPassword(publicIp, password);
+    setWorkspaceState((current) => ({
+      ...current,
+      createFeedback: "SSH 密码已保存在本地。下次打开 Tunnel 时会自动输入。",
+    }));
+  };
+
+  const handleDeploymentPasswordClear = (deploymentId, publicIp) => {
+    if (!publicIp) {
+      return;
+    }
+
+    clearStoredSshPassword(publicIp);
+    setSshPasswordDrafts((current) => ({
+      ...current,
+      [deploymentId]: "",
+    }));
+    setWorkspaceState((current) => ({
+      ...current,
+      createFeedback: "本地保存的 SSH 密码已清除。",
+    }));
+  };
+
   const handleInstanceTypeChange = (index, value) => {
     setCreateForm((current) => ({
       ...current,
@@ -3263,6 +3352,10 @@ export function App() {
               onMemberInvite={handleMemberInvite}
               onMemberRoleChange={handleMemberRoleChange}
               onMemberRemove={handleMemberRemove}
+              sshPasswordDrafts={sshPasswordDrafts}
+              onDeploymentPasswordDraftChange={handleDeploymentPasswordDraftChange}
+              onDeploymentPasswordSave={handleDeploymentPasswordSave}
+              onDeploymentPasswordClear={handleDeploymentPasswordClear}
             />
           ) : null}
         </main>
