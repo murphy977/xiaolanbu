@@ -385,60 +385,56 @@ function AuthView({
       <div className="ambient ambient-c"></div>
       <section className="auth-frame">
         <article className="auth-stage">
-          <div className="auth-stage__topline">Xiaolanbu Cloud</div>
-          <div className="auth-stage__hero">
-            <div className="auth-mascot" aria-hidden="true">
-              <div className="auth-mascot__halo"></div>
-              <div className="auth-mascot__body">
-                <div className="auth-mascot__face">
+          <div className="auth-stage__cluster" aria-hidden="true">
+            <div className="auth-orbit auth-orbit--one">
+              <div className="auth-creature auth-creature--coral">
+                <div className="auth-creature__face">
                   <span></span>
                   <span></span>
                 </div>
-                <div className="auth-mascot__cheek auth-mascot__cheek--left"></div>
-                <div className="auth-mascot__cheek auth-mascot__cheek--right"></div>
+                <div className="auth-creature__arm auth-creature__arm--left"></div>
+                <div className="auth-creature__arm auth-creature__arm--right"></div>
               </div>
-              <div className="auth-mascot__leaf auth-mascot__leaf--left"></div>
-              <div className="auth-mascot__leaf auth-mascot__leaf--right"></div>
-              <div className="auth-mascot__shadow"></div>
             </div>
-            <div className="auth-stage__copy">
-              <h1 className="auth-stage__title">把你的实例、余额和聊天控制台，收进同一个舒服的入口里。</h1>
-              <p className="auth-stage__subtitle">
-                小懒布会替你管理云端实例、钱包余额和控制入口。登录之后，桌面端只会显示你自己的工作区、实例和账单。
-              </p>
+            <div className="auth-orbit auth-orbit--two">
+              <div className="auth-creature auth-creature--mint">
+                <div className="auth-creature__face">
+                  <span></span>
+                  <span></span>
+                </div>
+                <div className="auth-creature__antenna auth-creature__antenna--left"></div>
+                <div className="auth-creature__antenna auth-creature__antenna--right"></div>
+              </div>
             </div>
-          </div>
-          <div className="auth-stage__rail">
-            <div className="auth-rail-card auth-rail-card--warm">
-              <strong>云端部署</strong>
-              <span>一键创建实例，保存密码后可以直接后台连 Tunnel。</span>
+            <div className="auth-orbit auth-orbit--three">
+              <div className="auth-creature auth-creature--cream">
+                <div className="auth-creature__face">
+                  <span></span>
+                  <span></span>
+                </div>
+                <div className="auth-creature__tail"></div>
+              </div>
             </div>
-            <div className="auth-rail-card auth-rail-card--mint">
-              <strong>开始聊天</strong>
-              <span>实例就绪后，直接进入真实 OpenClaw 控制台，不再停留在演示页。</span>
-            </div>
-          </div>
-          <div className="auth-stage__moments">
-            <div className="auth-stage__moment">
-              <span>今天的工作流</span>
-              <strong>登录 → 云部署 → Tunnel → 直接聊天</strong>
-            </div>
-            <div className="auth-stage__moment auth-stage__moment--ghost">
-              <span>适合谁</span>
-              <strong>个人用户、团队成员、需要独立实例的托管场景</strong>
-            </div>
+            <button className="auth-float-chip auth-float-chip--one" type="button" aria-label="Cloud">
+              ☁
+            </button>
+            <button className="auth-float-chip auth-float-chip--two" type="button" aria-label="Wallet">
+              ◆
+            </button>
+            <button className="auth-float-chip auth-float-chip--three" type="button" aria-label="Chat">
+              ✦
+            </button>
+            <button className="auth-float-chip auth-float-chip--four" type="button" aria-label="Tunnel">
+              ↗
+            </button>
+            <div className="auth-stage__floor"></div>
           </div>
         </article>
 
         <article className="auth-card">
           <div className="auth-card__header">
-            <div className="eyebrow">欢迎回来</div>
-            <h2 className="auth-title">{isLogin ? "登录小懒布" : "创建你的账户"}</h2>
-            <p className="auth-subtitle">
-              {isLogin
-                ? "继续查看你的工作区、实例、余额和控制台入口。"
-                : "注册后会自动获得自己的工作区，后续账单和实例都归到你名下。"}
-            </p>
+            <div className="eyebrow">Xiaolanbu</div>
+            <h2 className="auth-title">{isLogin ? "登录" : "注册"}</h2>
           </div>
 
           <div className="auth-switch">
@@ -476,26 +472,21 @@ function AuthView({
                 type="email"
                 value={authForm.email}
                 onChange={(event) => onAuthFormChange("email", event.target.value)}
-                placeholder="you@xiaolanbu.app"
+                placeholder="邮箱"
               />
             </label>
             <label className="field">
-              <span>密码</span>
+              <span>{isLogin ? "密码" : "设置密码"}</span>
               <input
                 type="password"
                 value={authForm.password}
                 onChange={(event) => onAuthFormChange("password", event.target.value)}
-                placeholder="至少 8 位，建议字母数字组合"
+                placeholder={isLogin ? "密码" : "至少 8 位"}
               />
             </label>
             <button className="primary-button auth-submit" onClick={onAuthSubmit} disabled={authPending}>
-              {authPending ? "处理中..." : isLogin ? "登录并进入工作台" : "创建账户并进入工作台"}
+              {authPending ? "处理中..." : isLogin ? "进入" : "创建并进入"}
             </button>
-          </div>
-
-          <div className="auth-footer-note">
-            <span>{isLogin ? "首次登录后可以直接创建云端实例。" : "注册完成后会自动登录。"} </span>
-            <strong>桌面端已接入真实后端和云端部署流程。</strong>
           </div>
         </article>
       </section>
