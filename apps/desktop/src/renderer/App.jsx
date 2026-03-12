@@ -678,7 +678,9 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
             </div>
             <div className="mini-stack__item">
               <strong>使用方式</strong>
-              <span>先打开 Tunnel，再打开本地控制台开始聊天。</span>
+              <span>
+                {tunnelStatus.connected ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。" : "先打开 Tunnel，再打开本地控制台开始聊天。"}
+              </span>
             </div>
           </div>
         </article>
@@ -703,10 +705,14 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
             <>
               <div className="chat-stream">
                 <div className="bubble bubble--assistant">
-                  第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。
+                  {tunnelStatus.connected
+                    ? "Tunnel 已经连通，小懒布可以直接把你带到真实控制台。"
+                    : "第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。"}
                 </div>
                 <div className="bubble bubble--assistant">
-                  第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。
+                  {tunnelStatus.connected
+                    ? "现在点击“直接开始聊天”，就会打开本地控制台。"
+                    : "第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。"}
                 </div>
                 <div className="bubble bubble--user">
                   当前实例：{primaryDeployment.name} · {publicIp || "无公网 IP"}
@@ -731,10 +737,12 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
               <div className="composer assistant-actions">
                 <button
                   className="primary-button small-cta"
-                  onClick={() => onLaunchTunnel(tunnelCommand)}
-                  disabled={!tunnelCommand || tunnelStatus.connected}
+                  onClick={() =>
+                    tunnelStatus.connected ? onOpenExternal(dashboardUrl) : onLaunchTunnel(tunnelCommand)
+                  }
+                  disabled={tunnelStatus.connected ? !dashboardUrl : !tunnelCommand}
                 >
-                  {tunnelStatus.connected ? "Tunnel 已连接" : "先打开 Tunnel"}
+                  {tunnelStatus.connected ? "直接开始聊天" : "先打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1385,10 +1393,12 @@ function SettingsView({
               <div className="result-actions">
                 <button
                   className="primary-button small"
-                  onClick={() => onLaunchTunnel(derivedTunnelCommand)}
-                  disabled={!derivedTunnelCommand || tunnelStatus.connected}
+                  onClick={() =>
+                    tunnelStatus.connected ? onOpenExternal(localDashboardUrl) : onLaunchTunnel(derivedTunnelCommand)
+                  }
+                  disabled={tunnelStatus.connected ? !localDashboardUrl : !derivedTunnelCommand}
                 >
-                  {tunnelStatus.connected ? "Tunnel 已连接" : "在终端打开 Tunnel"}
+                  {tunnelStatus.connected ? "直接开始聊天" : "在终端打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1741,10 +1751,14 @@ function SettingsView({
                   <div className="result-actions">
                     <button
                       className="primary-button small"
-                      onClick={() => onLaunchTunnel(deploymentTunnelCommand)}
-                      disabled={!deploymentTunnelCommand || tunnelStatus.connected}
+                      onClick={() =>
+                        tunnelStatus.connected
+                          ? onOpenExternal(deploymentDashboardUrl)
+                          : onLaunchTunnel(deploymentTunnelCommand)
+                      }
+                      disabled={tunnelStatus.connected ? !deploymentDashboardUrl : !deploymentTunnelCommand}
                     >
-                      {tunnelStatus.connected ? "Tunnel 已连接" : "打开 Tunnel"}
+                      {tunnelStatus.connected ? "直接开始聊天" : "打开 Tunnel"}
                     </button>
                     <button
                       className="ghost-button small"
