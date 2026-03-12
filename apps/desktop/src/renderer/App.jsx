@@ -150,6 +150,14 @@ async function getTunnelStatus() {
   return bridge.getTunnelStatus();
 }
 
+function isTunnelReadyForHost(tunnelStatus, publicIp) {
+  if (!tunnelStatus?.connected || !publicIp) {
+    return false;
+  }
+
+  return tunnelStatus.host === publicIp;
+}
+
 async function launchTunnelCommand(command) {
   if (!command) {
     return { ok: false };
@@ -645,6 +653,7 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
   const runningDeployments = deployments.filter((item) => item.status === "running");
   const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
+  const tunnelReady = isTunnelReadyForHost(tunnelStatus, publicIp);
   const tunnelCommand = getNormalizedTunnelCommand(
     publicIp
       ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${publicIp}`
@@ -679,7 +688,7 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
             <div className="mini-stack__item">
               <strong>使用方式</strong>
               <span>
-                {tunnelStatus.connected ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。" : "先打开 Tunnel，再打开本地控制台开始聊天。"}
+                {tunnelReady ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。" : "先打开 Tunnel，再打开本地控制台开始聊天。"}
               </span>
             </div>
           </div>
@@ -705,12 +714,12 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
             <>
               <div className="chat-stream">
                 <div className="bubble bubble--assistant">
-                  {tunnelStatus.connected
+                  {tunnelReady
                     ? "Tunnel 已经连通，小懒布可以直接把你带到真实控制台。"
                     : "第一步，先打开 SSH Tunnel。桌面端会把命令直接塞进终端。"}
                 </div>
                 <div className="bubble bubble--assistant">
-                  {tunnelStatus.connected
+                  {tunnelReady
                     ? "现在点击“直接开始聊天”，就会打开本地控制台。"
                     : "第二步，再打开本地控制台。连接成功后，你就可以直接在控制台里开始聊天。"}
                 </div>
@@ -738,11 +747,11 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
                 <button
                   className="primary-button small-cta"
                   onClick={() =>
-                    tunnelStatus.connected ? onOpenExternal(dashboardUrl) : onLaunchTunnel(tunnelCommand)
+                    tunnelReady ? onOpenExternal(dashboardUrl) : onLaunchTunnel(tunnelCommand)
                   }
-                  disabled={tunnelStatus.connected ? !dashboardUrl : !tunnelCommand}
+                  disabled={tunnelReady ? !dashboardUrl : !tunnelCommand}
                 >
-                  {tunnelStatus.connected ? "直接开始聊天" : "先打开 Tunnel"}
+                  {tunnelReady ? "直接开始聊天" : "先打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1114,6 +1123,7 @@ function SettingsView({
   );
   const localDashboardUrl = createAccess?.dashboardUrl ?? "";
   const localBrowserControlUrl = createPublicIp ? "http://127.0.0.1:18791/" : "";
+  const createTunnelReady = isTunnelReadyForHost(tunnelStatus, createPublicIp);
   const walletBalance = typeof wallet?.balanceCny === "number" ? wallet.balanceCny : 0;
   const createBlockedByBalance = walletBalance <= 0;
   const lowBalanceWarning = walletBalance > 0 && walletBalance < 10;
@@ -1394,11 +1404,11 @@ function SettingsView({
                 <button
                   className="primary-button small"
                   onClick={() =>
-                    tunnelStatus.connected ? onOpenExternal(localDashboardUrl) : onLaunchTunnel(derivedTunnelCommand)
+                    createTunnelReady ? onOpenExternal(localDashboardUrl) : onLaunchTunnel(derivedTunnelCommand)
                   }
-                  disabled={tunnelStatus.connected ? !localDashboardUrl : !derivedTunnelCommand}
+                  disabled={createTunnelReady ? !localDashboardUrl : !derivedTunnelCommand}
                 >
-                  {tunnelStatus.connected ? "直接开始聊天" : "在终端打开 Tunnel"}
+                  {createTunnelReady ? "直接开始聊天" : "在终端打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1672,6 +1682,7 @@ function SettingsView({
                   ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
                   : deployment.access?.sshTunnel ?? "",
               );
+              const deploymentTunnelReady = isTunnelReadyForHost(tunnelStatus, deploymentPublicIp);
               const deploymentStoredPassword = getStoredSshPassword(deploymentPublicIp);
               const deploymentPasswordDraft =
                 sshPasswordDrafts[deployment.id] ?? deploymentStoredPassword;
@@ -1752,13 +1763,13 @@ function SettingsView({
                     <button
                       className="primary-button small"
                       onClick={() =>
-                        tunnelStatus.connected
+                        deploymentTunnelReady
                           ? onOpenExternal(deploymentDashboardUrl)
                           : onLaunchTunnel(deploymentTunnelCommand)
                       }
-                      disabled={tunnelStatus.connected ? !deploymentDashboardUrl : !deploymentTunnelCommand}
+                      disabled={deploymentTunnelReady ? !deploymentDashboardUrl : !deploymentTunnelCommand}
                     >
-                      {tunnelStatus.connected ? "直接开始聊天" : "打开 Tunnel"}
+                      {deploymentTunnelReady ? "直接开始聊天" : "打开 Tunnel"}
                     </button>
                     <button
                       className="ghost-button small"
@@ -3056,13 +3067,20 @@ export function App() {
       return;
     }
 
-    const result = await launchTunnelCommand(command);
-    if (result?.ok) {
+  const result = await launchTunnelCommand(command);
+  if (result?.ok) {
+      const successMessage = result.alreadyRunning
+        ? "当前实例的 Tunnel 已在后台运行，可直接开始聊天。"
+        : result.automated
+          ? result.replacedExisting
+            ? "已关闭旧实例的 Tunnel，并在后台自动建立当前实例的新 Tunnel。连通后直接点“打开本地控制台”即可。"
+            : "Tunnel 已在后台自动建立。首次确认和密码输入都已处理，连通后直接点“打开本地控制台”即可。"
+          : result.replacedExisting
+            ? "已关闭旧实例的 Tunnel，并在终端后台打开新的 Tunnel。若终端提示密码，请手动输入后再打开本地控制台。"
+            : "Tunnel 命令已在终端后台打开。首次确认会自动跳过；如果终端提示密码，请手动输入后再打开本地控制台。";
       setWorkspaceState((current) => ({
         ...current,
-        createFeedback: result.automated
-          ? "Tunnel 已在后台自动建立。首次确认和密码输入都已处理，连通后直接点“打开本地控制台”即可。"
-          : "Tunnel 命令已在终端后台打开。首次确认会自动跳过；如果终端提示密码，请手动输入后再打开本地控制台。",
+        createFeedback: successMessage,
       }));
       return;
     }

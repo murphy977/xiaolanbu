@@ -3,7 +3,7 @@ const fs = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
@@ -67,6 +67,68 @@ function launchDetached(command, args) {
     detached: true,
     stdio: "ignore",
   }).unref();
+}
+
+function extractTunnelHost(command) {
+  if (typeof command !== "string") {
+    return "";
+  }
+
+  const match = command.match(/\broot@([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b/);
+  return match?.[1] ?? "";
+}
+
+function listActiveTunnelProcesses() {
+  if (process.platform === "win32") {
+    return [];
+  }
+
+  try {
+    const output = execFileSync("pgrep", ["-fal", "ssh"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const firstSpace = line.indexOf(" ");
+        if (firstSpace <= 0) {
+          return null;
+        }
+
+        const pid = Number(line.slice(0, firstSpace));
+        const command = line.slice(firstSpace + 1);
+        if (
+          !Number.isFinite(pid) ||
+          !command.includes("-L 18789:127.0.0.1:18789") ||
+          !command.includes("-L 18791:127.0.0.1:18791")
+        ) {
+          return null;
+        }
+
+        return {
+          pid,
+          command,
+          host: extractTunnelHost(command),
+        };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function killTunnelProcesses(processes) {
+  for (const processInfo of processes) {
+    try {
+      process.kill(processInfo.pid, "SIGTERM");
+    } catch {
+      // Ignore already-exited processes.
+    }
+  }
 }
 
 function createTunnelLauncherScript(command, password) {
@@ -192,14 +254,28 @@ app.whenReady().then(() => {
     }
 
     const normalizedCommand = normalizeTunnelCommand(command);
+    const targetHost = extractTunnelHost(normalizedCommand);
+    const activeTunnels = listActiveTunnelProcesses();
+    const sameHostTunnel = targetHost
+      ? activeTunnels.find((processInfo) => processInfo.host === targetHost)
+      : null;
+
+    if (sameHostTunnel) {
+      return { ok: true, automated: true, alreadyRunning: true, host: targetHost };
+    }
+
+    if (activeTunnels.length > 0) {
+      killTunnelProcesses(activeTunnels);
+    }
+
     if (typeof password === "string" && password.trim() && process.platform !== "win32") {
       const launcherPath = createTunnelLauncherScript(normalizedCommand, password.trim());
       launchDetached("/bin/bash", [launcherPath]);
-      return { ok: true, automated: true };
+      return { ok: true, automated: true, host: targetHost, replacedExisting: activeTunnels.length > 0 };
     }
 
     launchInTerminal(normalizedCommand);
-    return { ok: true, automated: false };
+    return { ok: true, automated: false, host: targetHost, replacedExisting: activeTunnels.length > 0 };
   });
 
   ipcMain.handle("xiaolanbu:get-tunnel-status", async () => {
@@ -207,12 +283,16 @@ app.whenReady().then(() => {
       checkLocalPortOpen(18789),
       checkLocalPortOpen(18791),
     ]);
+    const activeTunnels = listActiveTunnelProcesses();
+    const activeTunnel = activeTunnels[0] ?? null;
 
     return {
       ok: true,
       dashboardPortOpen,
       browserControlPortOpen,
       connected: dashboardPortOpen,
+      host: activeTunnel?.host ?? "",
+      pid: activeTunnel?.pid ?? null,
     };
   });
 
