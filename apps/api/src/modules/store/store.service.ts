@@ -1043,10 +1043,18 @@ export class StoreService implements OnModuleInit {
     const summary =
       this.usageSummaries.find((item) => item.workspaceId === workspaceId && item.period === period) ??
       this.usageSummaries.find((item) => item.workspaceId === workspaceId && item.period === "today");
-    if (!summary) {
-      throw new NotFoundException(`Usage summary for workspace ${workspaceId} not found`);
+    if (summary) {
+      return summary;
     }
-    return summary;
+
+    return {
+      workspaceId,
+      period,
+      requestCount: 0,
+      totalTokens: 0,
+      totalCostCny: 0,
+      topModels: [],
+    };
   }
 
   listDeploymentUsageSummaries(workspaceId: string, period: "today" | "7d" | "30d") {
