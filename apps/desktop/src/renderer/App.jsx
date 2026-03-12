@@ -377,6 +377,8 @@ function AuthView({
   onAuthModeChange,
 }) {
   const isLogin = authMode === "login";
+  const [activeField, setActiveField] = useState("idle");
+  const stageState = activeField === "idle" ? authMode : activeField;
 
   return (
     <div className="auth-shell">
@@ -385,13 +387,15 @@ function AuthView({
       <div className="ambient ambient-c"></div>
       <section className="auth-frame">
         <article className="auth-stage">
-          <div className="auth-stage__cluster" aria-hidden="true">
+          <div className={`auth-stage__cluster is-${stageState}`} aria-hidden="true">
             <div className="auth-orbit auth-orbit--one">
               <div className="auth-creature auth-creature--coral">
                 <div className="auth-creature__face">
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__cheek auth-creature__cheek--left"></div>
+                <div className="auth-creature__cheek auth-creature__cheek--right"></div>
                 <div className="auth-creature__arm auth-creature__arm--left"></div>
                 <div className="auth-creature__arm auth-creature__arm--right"></div>
               </div>
@@ -412,6 +416,8 @@ function AuthView({
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__paw auth-creature__paw--left"></div>
+                <div className="auth-creature__paw auth-creature__paw--right"></div>
                 <div className="auth-creature__tail"></div>
               </div>
             </div>
@@ -433,8 +439,11 @@ function AuthView({
 
         <article className="auth-card">
           <div className="auth-card__header">
-            <div className="eyebrow">Xiaolanbu</div>
-            <h2 className="auth-title">{isLogin ? "登录" : "注册"}</h2>
+            <div className="auth-mark">
+              <span className="auth-mark__dot"></span>
+              小懒布
+            </div>
+            <h2 className="auth-title">{isLogin ? "欢迎回来" : "创建账号"}</h2>
           </div>
 
           <div className="auth-switch">
@@ -456,32 +465,38 @@ function AuthView({
 
           <div className="auth-form">
             {!isLogin ? (
-              <label className="field">
-                <span>昵称</span>
+              <label className="field field--minimal">
+                <span className="sr-only">昵称</span>
                 <input
                   type="text"
                   value={authForm.displayName}
                   onChange={(event) => onAuthFormChange("displayName", event.target.value)}
-                  placeholder="例如：午松 / 内容组"
+                  onFocus={() => setActiveField("displayName")}
+                  onBlur={() => setActiveField("idle")}
+                  placeholder="昵称"
                 />
               </label>
             ) : null}
-            <label className="field">
-              <span>邮箱</span>
+            <label className="field field--minimal">
+              <span className="sr-only">邮箱</span>
               <input
                 type="email"
                 value={authForm.email}
                 onChange={(event) => onAuthFormChange("email", event.target.value)}
+                onFocus={() => setActiveField("email")}
+                onBlur={() => setActiveField("idle")}
                 placeholder="邮箱"
               />
             </label>
-            <label className="field">
-              <span>{isLogin ? "密码" : "设置密码"}</span>
+            <label className="field field--minimal">
+              <span className="sr-only">{isLogin ? "密码" : "设置密码"}</span>
               <input
                 type="password"
                 value={authForm.password}
                 onChange={(event) => onAuthFormChange("password", event.target.value)}
-                placeholder={isLogin ? "密码" : "至少 8 位"}
+                onFocus={() => setActiveField("password")}
+                onBlur={() => setActiveField("idle")}
+                placeholder={isLogin ? "密码" : "设置密码"}
               />
             </label>
             <button className="primary-button auth-submit" onClick={onAuthSubmit} disabled={authPending}>
