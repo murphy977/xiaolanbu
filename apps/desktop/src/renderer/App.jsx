@@ -864,6 +864,7 @@ function SettingsView({
   onOpenExternal,
   onCopyText,
   onLaunchTunnel,
+  onGoMembership,
   actionPendingId,
   onDeploymentAction,
   workspaceCreateName,
@@ -912,6 +913,9 @@ function SettingsView({
     : createAccess?.sshTunnel ?? "";
   const localDashboardUrl = createAccess?.dashboardUrl ?? "";
   const localBrowserControlUrl = createPublicIp ? "http://127.0.0.1:18791/" : "";
+  const walletBalance = typeof wallet?.balanceCny === "number" ? wallet.balanceCny : 0;
+  const createBlockedByBalance = walletBalance <= 0;
+  const lowBalanceWarning = walletBalance > 0 && walletBalance < 10;
 
   return (
     <section className="view view--settings is-visible">
@@ -986,11 +990,28 @@ function SettingsView({
                 用户只需要填写实例名称和登录密码，小懒布会按香港地域的默认资源自动完成创建，并按规格顺序兜底重试。
               </div>
             </div>
-            <button className="primary-button small" onClick={onCreate} disabled={createPending}>
-              {createPending ? "创建中..." : "立即开通"}
+            <button className="primary-button small" onClick={onCreate} disabled={createPending || createBlockedByBalance}>
+              {createPending ? "创建中..." : createBlockedByBalance ? "请先充值" : "立即开通"}
             </button>
           </div>
 
+          {createBlockedByBalance ? (
+            <div className="inline-notice inline-notice--warn">
+              <strong>当前余额不足，暂时无法开通新的云端实例。</strong>
+              <span>云端实例开通后会持续产生托管和模型调用费用，建议先充值再继续。</span>
+              <div className="inline-notice__actions">
+                <button className="primary-button small" onClick={onGoMembership}>
+                  去会员与充值
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {lowBalanceWarning ? (
+            <div className="inline-notice inline-notice--warn">
+              <strong>当前余额偏低：¥{walletBalance.toFixed(2)}</strong>
+              <span>可以继续开通实例，但建议先补充余额，避免实例创建后很快因为余额不足而被限制调用。</span>
+            </div>
+          ) : null}
           {operationNotice ? (
             <div className="inline-notice inline-notice--info">
               <strong>{operationNotice.title}</strong>
@@ -2568,6 +2589,15 @@ export function App() {
   };
 
   const handleCreateDeployment = async () => {
+    if ((workspaceState.wallet?.balanceCny ?? 0) <= 0) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createError: "当前余额不足，请先充值后再开通云端实例。",
+      }));
+      setCurrentView("membership");
+      return;
+    }
+
     if (!activeWorkspaceId) {
       setWorkspaceState((current) => ({
         ...current,
@@ -3025,6 +3055,7 @@ export function App() {
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
               onLaunchTunnel={handleLaunchTunnel}
+              onGoMembership={() => setCurrentView("membership")}
               actionPendingId={workspaceState.actionPendingId}
               onDeploymentAction={handleDeploymentAction}
               workspaceCreateName={workspaceCreateName}

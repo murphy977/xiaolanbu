@@ -1359,6 +1359,13 @@ select {
   box-shadow: var(--shadow-lg);
 }
 
+.inline-notice__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+}
+
 .inline-notice--warn {
   background: linear-gradient(135deg, rgba(255, 224, 181, 0.78), rgba(255, 245, 228, 0.92));
 }
