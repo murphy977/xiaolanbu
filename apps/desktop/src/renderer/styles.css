@@ -104,6 +104,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.54);
   box-shadow: inset 0 20px 42px rgba(255, 255, 255, 0.28);
   overflow: hidden;
+  --auth-pointer-x: 0;
+  --auth-pointer-y: 0;
 }
 
 .auth-stage__cluster::before,
@@ -162,6 +164,11 @@ body {
 .auth-orbit {
   position: absolute;
   transition: transform 320ms ease;
+  transform: translate3d(
+    calc(var(--auth-pointer-x) * 10px),
+    calc(var(--auth-pointer-y) * 10px),
+    0
+  );
 }
 
 .auth-orbit--one {
@@ -183,7 +190,11 @@ body {
 }
 
 .auth-stage__cluster.is-email .auth-orbit--one {
-  transform: translate3d(28px, -8px, 0) rotate(-10deg);
+  transform: translate3d(
+    calc(28px + var(--auth-pointer-x) * 14px),
+    calc(-8px + var(--auth-pointer-y) * 8px),
+    0
+  ) rotate(-10deg);
 }
 
 .auth-stage__cluster.is-email .auth-creature--coral .auth-creature__face {
@@ -205,12 +216,18 @@ body {
 
 .auth-stage__cluster.is-displayName .auth-orbit--two,
 .auth-stage__cluster.is-register .auth-orbit--two {
-  transform: translate3d(-10px, -14px, 0) rotate(7deg);
+  transform: translate3d(
+    calc(-10px + var(--auth-pointer-x) * 10px),
+    calc(-14px + var(--auth-pointer-y) * 8px),
+    0
+  ) rotate(7deg);
 }
 
 .auth-stage__cluster.is-displayName .auth-creature--mint,
 .auth-stage__cluster.is-register .auth-creature--mint {
-  transform: scale(1.03) rotate(-4deg);
+  transform: scale(1.03)
+    rotate(calc(-4deg + var(--auth-pointer-x) * 3deg))
+    translateY(calc(var(--auth-pointer-y) * 4px));
 }
 
 .auth-stage__cluster.is-displayName .auth-creature__antenna--left,
@@ -234,15 +251,19 @@ body {
 }
 
 .auth-stage__cluster.is-password .auth-orbit--three {
-  transform: translate3d(0, -26px, 0) rotate(-4deg) scale(1.03);
+  transform: translate3d(
+    calc(var(--auth-pointer-x) * 8px),
+    calc(-26px + var(--auth-pointer-y) * 6px),
+    0
+  ) rotate(-4deg) scale(1.03);
 }
 
 .auth-stage__cluster.is-password .auth-creature__paw--left {
-  transform: rotate(-40deg) translate(34px, -34px);
+  transform: rotate(-52deg) translate(42px, -44px) scale(1.08);
 }
 
 .auth-stage__cluster.is-password .auth-creature__paw--right {
-  transform: rotate(40deg) translate(-34px, -34px);
+  transform: rotate(52deg) translate(-42px, -44px) scale(1.08);
 }
 
 .auth-stage__cluster.is-password .auth-creature--cream .auth-creature__face {
@@ -260,6 +281,8 @@ body {
   border-radius: 42% 42% 38% 38% / 34% 34% 52% 52%;
   box-shadow: 0 26px 54px rgba(52, 34, 22, 0.16);
   transition: transform 320ms ease, box-shadow 320ms ease;
+  transform: rotate(calc(var(--auth-pointer-x) * 4deg))
+    translateY(calc(var(--auth-pointer-y) * 4px));
 }
 
 .auth-creature--coral {
@@ -439,10 +462,18 @@ body {
   animation-delay: -0.8s;
 }
 
+.auth-float-chip--one:hover {
+  transform: translateY(-8px) scale(1.08) rotate(-8deg);
+}
+
 .auth-float-chip--two {
   top: 18%;
   right: 11%;
   animation-delay: -2.2s;
+}
+
+.auth-float-chip--two:hover {
+  transform: translateY(-6px) scale(1.08) rotate(10deg);
 }
 
 .auth-float-chip--three {
@@ -451,10 +482,19 @@ body {
   animation-delay: -4.2s;
 }
 
+.auth-float-chip--three:hover {
+  transform: translateY(-10px) scale(1.06);
+  border-radius: 28px;
+}
+
 .auth-float-chip--four {
   right: 14%;
   bottom: 18%;
   animation-delay: -1.6s;
+}
+
+.auth-float-chip--four:hover {
+  transform: translate(4px, -8px) scale(1.08) rotate(12deg);
 }
 
 .auth-stage__cluster.is-email .auth-float-chip--one,

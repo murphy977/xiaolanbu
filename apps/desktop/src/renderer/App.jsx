@@ -378,6 +378,7 @@ function AuthView({
 }) {
   const isLogin = authMode === "login";
   const [activeField, setActiveField] = useState("idle");
+  const [pointerOffset, setPointerOffset] = useState({ x: 0, y: 0 });
   const stageState = activeField === "idle" ? authMode : activeField;
 
   return (
@@ -387,7 +388,21 @@ function AuthView({
       <div className="ambient ambient-c"></div>
       <section className="auth-frame">
         <article className="auth-stage">
-          <div className={`auth-stage__cluster is-${stageState}`} aria-hidden="true">
+          <div
+            className={`auth-stage__cluster is-${stageState}`}
+            aria-hidden="true"
+            onMouseMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+              const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+              setPointerOffset({ x, y });
+            }}
+            onMouseLeave={() => setPointerOffset({ x: 0, y: 0 })}
+            style={{
+              "--auth-pointer-x": `${pointerOffset.x.toFixed(3)}`,
+              "--auth-pointer-y": `${pointerOffset.y.toFixed(3)}`,
+            }}
+          >
             <div className="auth-orbit auth-orbit--one">
               <div className="auth-creature auth-creature--coral">
                 <div className="auth-creature__face">
