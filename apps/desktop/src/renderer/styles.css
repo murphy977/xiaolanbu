@@ -187,20 +187,20 @@ body {
 }
 
 .auth-stage__cluster.is-email .auth-creature--coral .auth-creature__face {
-  transform: translateX(-50%) translateX(10px);
+  transform: translateX(-50%) translateX(16px) translateY(-2px);
 }
 
 .auth-stage__cluster.is-email .auth-creature--coral .auth-creature__arm--left {
-  transform: rotate(-48deg) translateY(-4px);
+  transform: rotate(-56deg) translate(-4px, -10px);
 }
 
 .auth-stage__cluster.is-email .auth-creature--coral .auth-creature__arm--right {
-  transform: rotate(46deg) translateY(-6px);
+  transform: rotate(54deg) translate(6px, -12px);
 }
 
 .auth-stage__cluster.is-email .auth-creature--mint .auth-creature__arm--mint-left,
 .auth-stage__cluster.is-email .auth-creature--mint .auth-creature__arm--mint-right {
-  transform: translateY(6px);
+  transform: translateY(10px);
 }
 
 .auth-stage__cluster.is-displayName .auth-orbit--two,
@@ -225,28 +225,32 @@ body {
 
 .auth-stage__cluster.is-displayName .auth-creature--mint .auth-creature__arm--mint-left,
 .auth-stage__cluster.is-register .auth-creature--mint .auth-creature__arm--mint-left {
-  transform: rotate(-48deg) translate(-8px, 2px);
+  transform: rotate(-58deg) translate(-16px, -2px);
 }
 
 .auth-stage__cluster.is-displayName .auth-creature--mint .auth-creature__arm--mint-right,
 .auth-stage__cluster.is-register .auth-creature--mint .auth-creature__arm--mint-right {
-  transform: rotate(48deg) translate(8px, 2px);
+  transform: rotate(58deg) translate(16px, -2px);
 }
 
 .auth-stage__cluster.is-password .auth-orbit--three {
-  transform: translate3d(0, -18px, 0) rotate(-2deg);
+  transform: translate3d(0, -26px, 0) rotate(-4deg) scale(1.03);
 }
 
 .auth-stage__cluster.is-password .auth-creature__paw--left {
-  transform: rotate(-22deg) translate(16px, -18px);
+  transform: rotate(-40deg) translate(34px, -34px);
 }
 
 .auth-stage__cluster.is-password .auth-creature__paw--right {
-  transform: rotate(22deg) translate(-16px, -18px);
+  transform: rotate(40deg) translate(-34px, -34px);
 }
 
 .auth-stage__cluster.is-password .auth-creature--cream .auth-creature__face {
-  opacity: 0.18;
+  opacity: 0.04;
+}
+
+.auth-stage__cluster.is-password .auth-creature--cream .auth-creature__tail {
+  transform: rotate(40deg) translate(6px, -2px);
 }
 
 .auth-creature {
@@ -413,8 +417,9 @@ body {
   box-shadow: 0 18px 40px rgba(66, 42, 22, 0.1);
   color: #1d1f24;
   font-size: 24px;
-  transition: transform 280ms ease, box-shadow 280ms ease;
+  transition: transform 280ms ease, box-shadow 280ms ease, background 280ms ease;
   cursor: pointer;
+  animation: auth-chip-drift 7.5s ease-in-out infinite;
 }
 
 .auth-float-chip:hover {
@@ -431,29 +436,46 @@ body {
 .auth-float-chip--one {
   top: 14%;
   left: 9%;
+  animation-delay: -0.8s;
 }
 
 .auth-float-chip--two {
   top: 18%;
   right: 11%;
+  animation-delay: -2.2s;
 }
 
 .auth-float-chip--three {
   bottom: 16%;
   left: 12%;
+  animation-delay: -4.2s;
 }
 
 .auth-float-chip--four {
   right: 14%;
   bottom: 18%;
+  animation-delay: -1.6s;
 }
 
 .auth-stage__cluster.is-email .auth-float-chip--one,
 .auth-stage__cluster.is-displayName .auth-float-chip--three,
 .auth-stage__cluster.is-password .auth-float-chip--four,
 .auth-stage__cluster.is-register .auth-float-chip--two {
-  box-shadow: 0 24px 50px rgba(255, 106, 61, 0.18);
+  box-shadow: 0 28px 58px rgba(255, 106, 61, 0.22);
   background: rgba(255, 255, 255, 0.98);
+}
+
+.auth-stage__cluster.is-email .auth-float-chip--one {
+  transform: rotate(-10deg) scale(1.08);
+}
+
+.auth-stage__cluster.is-register .auth-float-chip--two,
+.auth-stage__cluster.is-displayName .auth-float-chip--three {
+  transform: rotate(8deg) scale(1.08);
+}
+
+.auth-stage__cluster.is-password .auth-float-chip--four {
+  transform: rotate(12deg) scale(1.1);
 }
 
 .auth-stage__floor {
@@ -1997,6 +2019,25 @@ select {
 .field--minimal input::placeholder {
   font-size: 24px;
   color: rgba(29, 31, 36, 0.52);
+}
+
+@keyframes auth-chip-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  25% {
+    transform: translate3d(0, -6px, 0) rotate(-4deg);
+  }
+
+  50% {
+    transform: translate3d(4px, -2px, 0) rotate(4deg);
+  }
+
+  75% {
+    transform: translate3d(-3px, 5px, 0) rotate(-3deg);
+  }
 }
 
 .field input:focus {
