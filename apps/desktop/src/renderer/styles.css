@@ -198,6 +198,11 @@ body {
   transform: rotate(46deg) translateY(-6px);
 }
 
+.auth-stage__cluster.is-email .auth-creature--mint .auth-creature__arm--mint-left,
+.auth-stage__cluster.is-email .auth-creature--mint .auth-creature__arm--mint-right {
+  transform: translateY(6px);
+}
+
 .auth-stage__cluster.is-displayName .auth-orbit--two,
 .auth-stage__cluster.is-register .auth-orbit--two {
   transform: translate3d(-10px, -14px, 0) rotate(7deg);
@@ -216,6 +221,16 @@ body {
 .auth-stage__cluster.is-displayName .auth-creature__antenna--right,
 .auth-stage__cluster.is-register .auth-creature__antenna--right {
   transform: rotate(38deg) translateY(-5px);
+}
+
+.auth-stage__cluster.is-displayName .auth-creature--mint .auth-creature__arm--mint-left,
+.auth-stage__cluster.is-register .auth-creature--mint .auth-creature__arm--mint-left {
+  transform: rotate(-48deg) translate(-8px, 2px);
+}
+
+.auth-stage__cluster.is-displayName .auth-creature--mint .auth-creature__arm--mint-right,
+.auth-stage__cluster.is-register .auth-creature--mint .auth-creature__arm--mint-right {
+  transform: rotate(48deg) translate(8px, 2px);
 }
 
 .auth-stage__cluster.is-password .auth-orbit--three {
@@ -323,6 +338,24 @@ body {
   transform: rotate(34deg);
 }
 
+.auth-creature__arm--mint-left {
+  left: -10px;
+  top: 52px;
+  width: 58px;
+  height: 98px;
+  border-radius: 999px;
+  transform: rotate(-20deg);
+}
+
+.auth-creature__arm--mint-right {
+  right: -10px;
+  top: 52px;
+  width: 58px;
+  height: 98px;
+  border-radius: 999px;
+  transform: rotate(20deg);
+}
+
 .auth-creature__antenna {
   top: -18px;
   width: 22px;
@@ -389,6 +422,12 @@ body {
   box-shadow: 0 24px 44px rgba(66, 42, 22, 0.16);
 }
 
+.auth-float-chip.is-active {
+  transform: translateY(-6px) scale(1.07);
+  box-shadow: 0 24px 52px rgba(255, 106, 61, 0.22);
+  background: rgba(255, 255, 255, 0.98);
+}
+
 .auth-float-chip--one {
   top: 14%;
   left: 9%;
@@ -448,7 +487,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: 14px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(29, 31, 36, 0.46);
@@ -466,7 +505,7 @@ body {
 .auth-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(30px, 2.3vw, 40px);
+  font-size: clamp(38px, 3vw, 52px);
   line-height: 1.02;
   letter-spacing: -0.04em;
   font-weight: 720;
@@ -480,7 +519,7 @@ body {
 
 .auth-switch {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 24px;
+  margin-top: 26px;
 }
 
 .auth-form {
@@ -489,7 +528,10 @@ body {
 
 .auth-submit {
   margin-top: 10px;
-  min-height: 58px;
+  min-height: 62px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .ghost-button.is-selected {
@@ -1945,10 +1987,16 @@ select {
 }
 
 .field--minimal input {
-  min-height: 58px;
+  min-height: 64px;
   border-radius: 20px;
-  padding: 0 18px;
+  padding: 0 20px;
   background: rgba(255, 255, 255, 0.92);
+  font-size: 24px;
+}
+
+.field--minimal input::placeholder {
+  font-size: 24px;
+  color: rgba(29, 31, 36, 0.52);
 }
 
 .field input:focus {

@@ -406,6 +406,8 @@ function AuthView({
                   <span></span>
                   <span></span>
                 </div>
+                <div className="auth-creature__arm auth-creature__arm--mint-left"></div>
+                <div className="auth-creature__arm auth-creature__arm--mint-right"></div>
                 <div className="auth-creature__antenna auth-creature__antenna--left"></div>
                 <div className="auth-creature__antenna auth-creature__antenna--right"></div>
               </div>
@@ -421,16 +423,34 @@ function AuthView({
                 <div className="auth-creature__tail"></div>
               </div>
             </div>
-            <button className="auth-float-chip auth-float-chip--one" type="button" aria-label="Cloud">
+            <button
+              className={`auth-float-chip auth-float-chip--one ${stageState === "email" ? "is-active" : ""}`}
+              type="button"
+              aria-label="Cloud"
+            >
               ☁
             </button>
-            <button className="auth-float-chip auth-float-chip--two" type="button" aria-label="Wallet">
+            <button
+              className={`auth-float-chip auth-float-chip--two ${
+                stageState === "displayName" || stageState === "register" ? "is-active" : ""
+              }`}
+              type="button"
+              aria-label="Identity"
+            >
               ◆
             </button>
-            <button className="auth-float-chip auth-float-chip--three" type="button" aria-label="Chat">
+            <button
+              className={`auth-float-chip auth-float-chip--three ${stageState === "login" ? "is-active" : ""}`}
+              type="button"
+              aria-label="Chat"
+            >
               ✦
             </button>
-            <button className="auth-float-chip auth-float-chip--four" type="button" aria-label="Tunnel">
+            <button
+              className={`auth-float-chip auth-float-chip--four ${stageState === "password" ? "is-active" : ""}`}
+              type="button"
+              aria-label="Tunnel"
+            >
               ↗
             </button>
             <div className="auth-stage__floor"></div>
