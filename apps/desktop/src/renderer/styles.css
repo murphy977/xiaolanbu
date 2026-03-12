@@ -603,14 +603,14 @@ body {
 
 .auth-card__header {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .auth-mark {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(29, 31, 36, 0.46);
@@ -628,10 +628,10 @@ body {
 .auth-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(38px, 3vw, 52px);
-  line-height: 1.02;
+  font-size: clamp(46px, 3.5vw, 60px);
+  line-height: 0.98;
   letter-spacing: -0.04em;
-  font-weight: 720;
+  font-weight: 740;
 }
 
 .auth-switch,
@@ -653,10 +653,17 @@ body {
   margin-top: 18px;
 }
 
+.auth-switch .ghost-button.small {
+  min-height: 56px;
+  font-size: 22px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
 .auth-submit {
   margin-top: 10px;
-  min-height: 62px;
-  font-size: 24px;
+  min-height: 66px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
   box-shadow: 0 22px 34px rgba(255, 106, 61, 0.2);
@@ -2115,16 +2122,16 @@ select {
 }
 
 .field--minimal input {
-  min-height: 64px;
+  min-height: 68px;
   border-radius: 20px;
-  padding: 0 20px;
+  padding: 0 22px;
   background: rgba(255, 255, 255, 0.92);
-  font-size: 24px;
+  font-size: 25px;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
 .field--minimal input::placeholder {
-  font-size: 24px;
+  font-size: 25px;
   color: rgba(29, 31, 36, 0.52);
 }
 

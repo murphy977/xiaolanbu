@@ -438,7 +438,6 @@ function AuthView({
                 <div className="auth-creature__mouth auth-creature__mouth--cream"></div>
                 <div className="auth-creature__paw auth-creature__paw--left"></div>
                 <div className="auth-creature__paw auth-creature__paw--right"></div>
-                <div className="auth-creature__tail"></div>
               </div>
             </div>
             <button
