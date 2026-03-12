@@ -62,6 +62,13 @@ function launchInTerminal(command) {
   }).unref();
 }
 
+function launchDetached(command, args) {
+  spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+  }).unref();
+}
+
 function createTunnelLauncherScript(command, password) {
   const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-tunnel-"));
   const launcherPath = path.join(launcherDir, "launch-tunnel.sh");
@@ -187,7 +194,7 @@ app.whenReady().then(() => {
     const normalizedCommand = normalizeTunnelCommand(command);
     if (typeof password === "string" && password.trim() && process.platform !== "win32") {
       const launcherPath = createTunnelLauncherScript(normalizedCommand, password.trim());
-      launchInTerminal(`/bin/bash ${JSON.stringify(launcherPath)}`);
+      launchDetached("/bin/bash", [launcherPath]);
       return { ok: true, automated: true };
     }
 
