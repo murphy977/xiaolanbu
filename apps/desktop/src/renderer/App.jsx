@@ -5,6 +5,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://47.86.38.197/api/v1")
   "",
 );
 const SESSION_STORAGE_KEY = "xiaolanbu_session";
+const SSH_PASSWORD_STORAGE_KEY = "xiaolanbu_ssh_passwords";
 
 const VIEW_META = {
   home: {
@@ -140,9 +141,17 @@ async function launchTunnelCommand(command) {
     return { ok: false };
   }
 
+  const normalizedCommand = getNormalizedTunnelCommand(command);
   const bridge = getAppBridge();
+  const publicIp = getTunnelHost(command);
+  const sshPassword = getStoredSshPassword(publicIp);
+
+  if (bridge?.launchTunnel) {
+    return bridge.launchTunnel(normalizedCommand, sshPassword);
+  }
+
   if (bridge?.launchCommand) {
-    return bridge.launchCommand(command);
+    return bridge.launchCommand(normalizedCommand);
   }
 
   return { ok: false };
@@ -167,6 +176,69 @@ function setStoredSessionToken(value) {
   }
 
   window.localStorage.setItem(SESSION_STORAGE_KEY, value);
+}
+
+function getStoredSshPasswords() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SSH_PASSWORD_STORAGE_KEY) ?? "{}";
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setStoredSshPassword(publicIp, password) {
+  if (typeof window === "undefined" || !publicIp || !password) {
+    return;
+  }
+
+  const nextPasswords = {
+    ...getStoredSshPasswords(),
+    [publicIp]: password,
+  };
+  window.localStorage.setItem(SSH_PASSWORD_STORAGE_KEY, JSON.stringify(nextPasswords));
+}
+
+function getStoredSshPassword(publicIp) {
+  if (!publicIp) {
+    return "";
+  }
+
+  return getStoredSshPasswords()[publicIp] ?? "";
+}
+
+function getTunnelHost(command) {
+  if (typeof command !== "string") {
+    return "";
+  }
+
+  const match = command.match(/@([A-Za-z0-9._-]+)\s*$/);
+  return match?.[1] ?? "";
+}
+
+function getNormalizedTunnelCommand(command) {
+  if (typeof command !== "string") {
+    return "";
+  }
+
+  const trimmed = command.trim();
+  if (!trimmed.startsWith("ssh ")) {
+    return trimmed;
+  }
+
+  if (trimmed.includes("StrictHostKeyChecking=")) {
+    return trimmed;
+  }
+
+  return trimmed.replace(
+    /^ssh\s+/,
+    "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ",
+  );
 }
 
 function formatCurrency(value) {
@@ -540,9 +612,11 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
   const runningDeployments = deployments.filter((item) => item.status === "running");
   const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
-  const tunnelCommand = publicIp
-    ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${publicIp}`
-    : primaryDeployment?.access?.sshTunnel ?? "";
+  const tunnelCommand = getNormalizedTunnelCommand(
+    publicIp
+      ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${publicIp}`
+      : primaryDeployment?.access?.sshTunnel ?? "",
+  );
   const dashboardUrl = primaryDeployment?.access?.dashboardUrl ?? primaryDeployment?.consoleUrl ?? "";
   const browserControlUrl =
     primaryDeployment?.mode === "cloud" && publicIp
@@ -987,9 +1061,11 @@ function SettingsView({
   const currentWorkspaceRole = activeWorkspace?.role ?? "member";
   const createAccess = createResult?.deployment?.access ?? null;
   const createPublicIp = createResult?.deployment?.publicIpAddress?.[0] ?? "";
-  const derivedTunnelCommand = createPublicIp
-    ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${createPublicIp}`
-    : createAccess?.sshTunnel ?? "";
+  const derivedTunnelCommand = getNormalizedTunnelCommand(
+    createPublicIp
+      ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${createPublicIp}`
+      : createAccess?.sshTunnel ?? "",
+  );
   const localDashboardUrl = createAccess?.dashboardUrl ?? "";
   const localBrowserControlUrl = createPublicIp ? "http://127.0.0.1:18791/" : "";
   const walletBalance = typeof wallet?.balanceCny === "number" ? wallet.balanceCny : 0;
@@ -1543,9 +1619,11 @@ function SettingsView({
               const deploymentDashboardUrl = deployment.access?.dashboardUrl ?? deployment.consoleUrl ?? "";
               const deploymentBrowserControlUrl =
                 deployment.mode === "cloud" && deploymentPublicIp ? "http://127.0.0.1:18791/" : deployment.access?.browserControlUrl ?? "";
-              const deploymentTunnelCommand = deploymentPublicIp
-                ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
-                : deployment.access?.sshTunnel ?? "";
+              const deploymentTunnelCommand = getNormalizedTunnelCommand(
+                deploymentPublicIp
+                  ? `ssh -N -L 18789:127.0.0.1:18789 -L 18791:127.0.0.1:18791 root@${deploymentPublicIp}`
+                  : deployment.access?.sshTunnel ?? "",
+              );
 
               return (
                 <div className="deployment-card" key={deployment.id}>
@@ -2743,6 +2821,11 @@ export function App() {
         }),
       });
 
+      const createdPublicIp =
+        result.deployment?.publicIpAddress?.[0] ??
+        getTunnelHost(result.deployment?.access?.sshTunnel ?? "");
+      setStoredSshPassword(createdPublicIp, createForm.password);
+
       setWorkspaceState((current) => ({
         ...current,
         createPending: false,
@@ -2806,7 +2889,9 @@ export function App() {
     if (result?.ok) {
       setWorkspaceState((current) => ({
         ...current,
-        createFeedback: "Tunnel 命令已在终端打开。连通后直接点“打开本地控制台”即可。",
+        createFeedback: result.automated
+          ? "Tunnel 已自动建立。首次确认和密码输入都已处理，连通后直接点“打开本地控制台”即可。"
+          : "Tunnel 命令已在终端打开。首次确认会自动跳过；如果终端提示密码，请手动输入后再打开本地控制台。",
       }));
       return;
     }
