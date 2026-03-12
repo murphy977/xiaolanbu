@@ -53,47 +53,62 @@ export class DeploymentsService {
     }> = [];
 
     for (const instanceType of instanceTypeCandidates) {
-      try {
-        vendorResult = await this.aliyunEcsService.runInstances({
-          regionId: body.region!,
-          imageId: body.imageId!,
-          instanceType,
-          securityGroupId: body.securityGroupId!,
-          vSwitchId: body.vSwitchId!,
-          instanceName: body.name,
-          amount: body.amount,
-          dryRun: body.dryRun,
-          password: body.password,
-          userData: this.resolveUserData(body, gatewayProvision ?? undefined),
-          systemDiskCategory: body.systemDiskCategory,
-          systemDiskSize: body.systemDiskSize,
-          internetMaxBandwidthOut: body.internetMaxBandwidthOut,
-          tags: [
-            { key: "product", value: "xiaolanbu" },
-            { key: "workspace_id", value: body.workspaceId },
-            ...(body.tags ?? []),
-          ],
-        });
-        selectedInstanceType = instanceType;
-        instanceTypeAttempts.push({
-          instanceType,
-          status: "success",
-          requestId: vendorResult.requestId,
-          retryable: false,
-        });
-        break;
-      } catch (error) {
-        lastProvisionError = error;
-        const retryable = this.isRetryableInstanceTypeError(error);
-        instanceTypeAttempts.push({
-          instanceType,
-          status: "error",
-          message: this.describeProvisioningError(error),
-          retryable,
-        });
-        if (!retryable) {
-          throw this.buildProvisioningException(error, instanceTypeAttempts);
+      const diskCandidates = this.resolveDiskCandidates(body, instanceType);
+
+      for (const diskCandidate of diskCandidates) {
+        try {
+          vendorResult = await this.aliyunEcsService.runInstances({
+            regionId: body.region!,
+            imageId: body.imageId!,
+            instanceType,
+            securityGroupId: body.securityGroupId!,
+            vSwitchId: body.vSwitchId!,
+            instanceName: body.name,
+            amount: body.amount,
+            dryRun: body.dryRun,
+            password: body.password,
+            userData: this.resolveUserData(body, gatewayProvision ?? undefined),
+            systemDiskCategory: diskCandidate.systemDiskCategory,
+            systemDiskSize: diskCandidate.systemDiskSize,
+            internetMaxBandwidthOut: body.internetMaxBandwidthOut,
+            tags: [
+              { key: "product", value: "xiaolanbu" },
+              { key: "workspace_id", value: body.workspaceId },
+              ...(body.tags ?? []),
+            ],
+          });
+          selectedInstanceType = instanceType;
+          instanceTypeAttempts.push({
+            instanceType: diskCandidate.attemptLabel,
+            status: "success",
+            requestId: vendorResult.requestId,
+            retryable: false,
+          });
+          break;
+        } catch (error) {
+          lastProvisionError = error;
+          const retryable = this.isRetryableInstanceTypeError(error);
+          instanceTypeAttempts.push({
+            instanceType: diskCandidate.attemptLabel,
+            status: "error",
+            message: this.describeProvisioningError(error),
+            retryable,
+          });
+          if (!retryable) {
+            throw this.buildProvisioningException(error, instanceTypeAttempts);
+          }
+
+          if (
+            !this.isRetryableDiskCategoryError(error) ||
+            !diskCandidate.usesExplicitSystemDiskCategory
+          ) {
+            break;
+          }
         }
+      }
+
+      if (vendorResult) {
+        break;
       }
     }
 
@@ -390,6 +405,31 @@ export class DeploymentsService {
     return [...new Set(candidates)];
   }
 
+  private resolveDiskCandidates(body: CreateDeploymentDto, instanceType: string) {
+    const base = {
+      systemDiskCategory: body.systemDiskCategory,
+      systemDiskSize: body.systemDiskSize,
+      usesExplicitSystemDiskCategory: Boolean(body.systemDiskCategory),
+      attemptLabel: body.systemDiskCategory
+        ? `${instanceType} · ${body.systemDiskCategory}`
+        : instanceType,
+    };
+
+    if (!body.systemDiskCategory) {
+      return [base];
+    }
+
+    return [
+      base,
+      {
+        systemDiskCategory: undefined,
+        systemDiskSize: body.systemDiskSize,
+        usesExplicitSystemDiskCategory: false,
+        attemptLabel: `${instanceType} · 默认系统盘`,
+      },
+    ];
+  }
+
   private isRetryableInstanceTypeError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -397,6 +437,15 @@ export class DeploymentsService {
       "OperationDenied.NoStock",
       "InvalidResourceType.NotSupported",
       "InvalidInstanceType.NotSupportDiskCategory",
+      "InvalidSystemDiskCategory.ValueNotSupported",
+    ].some((pattern) => message.includes(pattern));
+  }
+
+  private isRetryableDiskCategoryError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return [
+      "InvalidInstanceType.NotSupportDiskCategory",
+      "InvalidSystemDiskCategory.ValueNotSupported",
     ].some((pattern) => message.includes(pattern));
   }
 
@@ -413,6 +462,10 @@ export class DeploymentsService {
 
     if (message.includes("InvalidInstanceType.NotSupportDiskCategory")) {
       return "当前规格与系统盘类型不兼容";
+    }
+
+    if (message.includes("InvalidSystemDiskCategory.ValueNotSupported")) {
+      return "当前规格不支持所选系统盘类型";
     }
 
     if (message.includes("ReadTimeout")) {
