@@ -1,5 +1,6 @@
 const { app, BrowserWindow, clipboard, ipcMain, shell } = require("electron");
 const fs = require("fs");
+const net = require("net");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -98,6 +99,28 @@ exit $status
   return launcherPath;
 }
 
+function checkLocalPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finalize = (open) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve(open);
+    };
+
+    socket.setTimeout(600);
+    socket.once("connect", () => finalize(true));
+    socket.once("timeout", () => finalize(false));
+    socket.once("error", () => finalize(false));
+    socket.connect(port, "127.0.0.1");
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1560,
@@ -170,6 +193,20 @@ app.whenReady().then(() => {
 
     launchInTerminal(normalizedCommand);
     return { ok: true, automated: false };
+  });
+
+  ipcMain.handle("xiaolanbu:get-tunnel-status", async () => {
+    const [dashboardPortOpen, browserControlPortOpen] = await Promise.all([
+      checkLocalPortOpen(18789),
+      checkLocalPortOpen(18791),
+    ]);
+
+    return {
+      ok: true,
+      dashboardPortOpen,
+      browserControlPortOpen,
+      connected: dashboardPortOpen,
+    };
   });
 
   createWindow();

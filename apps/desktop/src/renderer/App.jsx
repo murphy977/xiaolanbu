@@ -136,6 +136,20 @@ function getAppBridge() {
   return window.xiaolanbu ?? null;
 }
 
+async function getTunnelStatus() {
+  const bridge = getAppBridge();
+  if (!bridge?.getTunnelStatus) {
+    return {
+      ok: false,
+      connected: false,
+      dashboardPortOpen: false,
+      browserControlPortOpen: false,
+    };
+  }
+
+  return bridge.getTunnelStatus();
+}
+
 async function launchTunnelCommand(command) {
   if (!command) {
     return { ok: false };
@@ -627,7 +641,7 @@ function HomeView({ go, wallet, usageSummary, activeDeploymentCount }) {
   );
 }
 
-function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText, go }) {
+function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText, go, tunnelStatus }) {
   const runningDeployments = deployments.filter((item) => item.status === "running");
   const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
@@ -718,9 +732,9 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
                 <button
                   className="primary-button small-cta"
                   onClick={() => onLaunchTunnel(tunnelCommand)}
-                  disabled={!tunnelCommand}
+                  disabled={!tunnelCommand || tunnelStatus.connected}
                 >
-                  先打开 Tunnel
+                  {tunnelStatus.connected ? "Tunnel 已连接" : "先打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1076,6 +1090,7 @@ function SettingsView({
   onDeploymentPasswordDraftChange,
   onDeploymentPasswordSave,
   onDeploymentPasswordClear,
+  tunnelStatus,
 }) {
   const runningDeployment = deployments.find((item) => item.status === "running");
   const activeActionDeployment = actionPendingId
@@ -1371,9 +1386,9 @@ function SettingsView({
                 <button
                   className="primary-button small"
                   onClick={() => onLaunchTunnel(derivedTunnelCommand)}
-                  disabled={!derivedTunnelCommand}
+                  disabled={!derivedTunnelCommand || tunnelStatus.connected}
                 >
-                  在终端打开 Tunnel
+                  {tunnelStatus.connected ? "Tunnel 已连接" : "在终端打开 Tunnel"}
                 </button>
                 <button
                   className="ghost-button small"
@@ -1727,9 +1742,9 @@ function SettingsView({
                     <button
                       className="primary-button small"
                       onClick={() => onLaunchTunnel(deploymentTunnelCommand)}
-                      disabled={!deploymentTunnelCommand}
+                      disabled={!deploymentTunnelCommand || tunnelStatus.connected}
                     >
-                      打开 Tunnel
+                      {tunnelStatus.connected ? "Tunnel 已连接" : "打开 Tunnel"}
                     </button>
                     <button
                       className="ghost-button small"
@@ -1907,6 +1922,11 @@ export function App() {
   });
   const [memberInviteEmail, setMemberInviteEmail] = useState("");
   const [sshPasswordDrafts, setSshPasswordDrafts] = useState({});
+  const [tunnelStatus, setTunnelStatus] = useState({
+    connected: false,
+    dashboardPortOpen: false,
+    browserControlPortOpen: false,
+  });
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
   const activeWorkspace =
@@ -2136,6 +2156,45 @@ export function App() {
 
     return () => window.clearInterval(timer);
   }, [activeWorkspaceId, workspaceState.createPending, workspaceState.actionPendingId, workspaceState.workspaceDangerPending]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshTunnelStatus = async () => {
+      try {
+        const result = await getTunnelStatus();
+        if (cancelled || !result?.ok) {
+          return;
+        }
+
+        setTunnelStatus({
+          connected: Boolean(result.connected),
+          dashboardPortOpen: Boolean(result.dashboardPortOpen),
+          browserControlPortOpen: Boolean(result.browserControlPortOpen),
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setTunnelStatus({
+          connected: false,
+          dashboardPortOpen: false,
+          browserControlPortOpen: false,
+        });
+      }
+    };
+
+    void refreshTunnelStatus();
+    const timer = window.setInterval(() => {
+      void refreshTunnelStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const handleWorkspaceSwitch = async (workspaceId) => {
     if (!workspaceId || workspaceId === activeWorkspaceId) {
@@ -3280,6 +3339,7 @@ export function App() {
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
               go={setCurrentView}
+              tunnelStatus={tunnelStatus}
             />
           ) : null}
           {currentView === "discover" ? <DiscoverView /> : null}
@@ -3365,6 +3425,7 @@ export function App() {
               onDeploymentPasswordDraftChange={handleDeploymentPasswordDraftChange}
               onDeploymentPasswordSave={handleDeploymentPasswordSave}
               onDeploymentPasswordClear={handleDeploymentPasswordClear}
+              tunnelStatus={tunnelStatus}
             />
           ) : null}
         </main>
