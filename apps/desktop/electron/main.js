@@ -296,6 +296,20 @@ app.whenReady().then(() => {
     };
   });
 
+  ipcMain.handle("xiaolanbu:stop-tunnel", async () => {
+    const activeTunnels = listActiveTunnelProcesses();
+    if (activeTunnels.length === 0) {
+      return { ok: true, stopped: false };
+    }
+
+    killTunnelProcesses(activeTunnels);
+    return {
+      ok: true,
+      stopped: true,
+      hosts: activeTunnels.map((processInfo) => processInfo.host).filter(Boolean),
+    };
+  });
+
   createWindow();
 
   app.on("activate", () => {

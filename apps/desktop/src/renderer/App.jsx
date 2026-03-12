@@ -179,6 +179,15 @@ async function launchTunnelCommand(command) {
   return { ok: false };
 }
 
+async function stopTunnelCommand() {
+  const bridge = getAppBridge();
+  if (!bridge?.stopTunnel) {
+    return { ok: false };
+  }
+
+  return bridge.stopTunnel();
+}
+
 function getStoredSessionToken() {
   if (typeof window === "undefined") {
     return "";
@@ -649,7 +658,7 @@ function HomeView({ go, wallet, usageSummary, activeDeploymentCount }) {
   );
 }
 
-function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText, go, tunnelStatus }) {
+function AssistantView({ deployments, onLaunchTunnel, onStopTunnel, onOpenExternal, onCopyText, go, tunnelStatus }) {
   const runningDeployments = deployments.filter((item) => item.status === "running");
   const primaryDeployment = runningDeployments[0] ?? deployments[0] ?? null;
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
@@ -690,6 +699,10 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
               <span>
                 {tunnelReady ? "Tunnel 已连通，现在可以直接打开控制台开始聊天。" : "先打开 Tunnel，再打开本地控制台开始聊天。"}
               </span>
+            </div>
+            <div className="mini-stack__item">
+              <strong>当前 Tunnel</strong>
+              <span>{tunnelStatus.host || "尚未连接到任何实例"}</span>
             </div>
           </div>
         </article>
@@ -773,6 +786,13 @@ function AssistantView({ deployments, onLaunchTunnel, onOpenExternal, onCopyText
                   disabled={!tunnelCommand}
                 >
                   复制 Tunnel
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={onStopTunnel}
+                  disabled={!tunnelStatus.connected}
+                >
+                  关闭 Tunnel
                 </button>
               </div>
             </>
@@ -1067,6 +1087,7 @@ function SettingsView({
   onOpenExternal,
   onCopyText,
   onLaunchTunnel,
+  onStopTunnel,
   onGoMembership,
   actionPendingId,
   onDeploymentAction,
@@ -1556,6 +1577,22 @@ function SettingsView({
               </div>
               <div className={`toggle-indicator ${wallet?.balanceCny > 0 ? "" : "toggle-indicator--off"}`}></div>
             </div>
+            <div className="toggle-item">
+              <div>
+                <strong>当前 Tunnel</strong>
+                <span>{tunnelStatus.connected ? `已连接 ${tunnelStatus.host || "本地实例"}` : "当前没有后台 Tunnel 在运行"}</span>
+              </div>
+              <div className={`toggle-indicator ${tunnelStatus.connected ? "" : "toggle-indicator--off"}`}></div>
+            </div>
+          </div>
+          <div className="result-actions">
+            <button
+              className="ghost-button small"
+              onClick={onStopTunnel}
+              disabled={!tunnelStatus.connected}
+            >
+              关闭当前 Tunnel
+            </button>
           </div>
         </article>
 
@@ -1794,6 +1831,13 @@ function SettingsView({
                     </button>
                     <button
                       className="ghost-button small"
+                      onClick={onStopTunnel}
+                      disabled={!deploymentTunnelReady}
+                    >
+                      关闭 Tunnel
+                    </button>
+                    <button
+                      className="ghost-button small"
                       onClick={() => onCopyText(deploymentPublicIp, "公网 IP 已复制")}
                       disabled={!deploymentPublicIp}
                     >
@@ -1951,6 +1995,8 @@ export function App() {
     connected: false,
     dashboardPortOpen: false,
     browserControlPortOpen: false,
+    host: "",
+    pid: null,
   });
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
@@ -2196,6 +2242,8 @@ export function App() {
           connected: Boolean(result.connected),
           dashboardPortOpen: Boolean(result.dashboardPortOpen),
           browserControlPortOpen: Boolean(result.browserControlPortOpen),
+          host: typeof result.host === "string" ? result.host : "",
+          pid: Number.isFinite(result.pid) ? result.pid : null,
         });
       } catch {
         if (cancelled) {
@@ -2206,6 +2254,8 @@ export function App() {
           connected: false,
           dashboardPortOpen: false,
           browserControlPortOpen: false,
+          host: "",
+          pid: null,
         });
       }
     };
@@ -3088,6 +3138,31 @@ export function App() {
     await handleCopyText(command, "无法直接打开终端，Tunnel 命令已复制。");
   };
 
+  const handleStopTunnel = async () => {
+    const result = await stopTunnelCommand();
+    if (result?.ok) {
+      setWorkspaceState((current) => ({
+        ...current,
+        createFeedback: result.stopped
+          ? "当前 Tunnel 已关闭。再次点击“打开 Tunnel”即可重新连接。"
+          : "当前没有后台 Tunnel 在运行。",
+      }));
+      setTunnelStatus({
+        connected: false,
+        dashboardPortOpen: false,
+        browserControlPortOpen: false,
+        host: "",
+        pid: null,
+      });
+      return;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      createFeedback: "无法自动关闭 Tunnel，请稍后再试。",
+    }));
+  };
+
   const handleDeploymentAction = async (deploymentId, action) => {
     const actionMap = {
       start: { method: "POST", path: `/deployments/${deploymentId}/start`, success: "实例已启动。" },
@@ -3368,6 +3443,7 @@ export function App() {
             <AssistantView
               deployments={workspaceState.deployments}
               onLaunchTunnel={handleLaunchTunnel}
+              onStopTunnel={handleStopTunnel}
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
               go={setCurrentView}
@@ -3417,6 +3493,7 @@ export function App() {
               onOpenExternal={handleOpenExternal}
               onCopyText={handleCopyText}
               onLaunchTunnel={handleLaunchTunnel}
+              onStopTunnel={handleStopTunnel}
               onGoMembership={() => setCurrentView("membership")}
               actionPendingId={workspaceState.actionPendingId}
               onDeploymentAction={handleDeploymentAction}

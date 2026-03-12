@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld("xiaolanbu", {
   launchCommand: (command) => ipcRenderer.invoke("xiaolanbu:launch-command", command),
   launchTunnel: (command, password) => ipcRenderer.invoke("xiaolanbu:launch-tunnel", command, password),
   getTunnelStatus: () => ipcRenderer.invoke("xiaolanbu:get-tunnel-status"),
+  stopTunnel: () => ipcRenderer.invoke("xiaolanbu:stop-tunnel"),
 });
