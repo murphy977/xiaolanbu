@@ -173,6 +173,9 @@ async function getLocalOpenClawStatus() {
       dashboardPortOpen: false,
       browserControlPortOpen: false,
       logPath: "",
+      bootstrapStage: "idle",
+      bootstrapMessage: "",
+      bootstrapLastLine: "",
     };
   }
 
@@ -1417,6 +1420,22 @@ function SettingsView({
     localDeployment?.metadata?.logPath ??
     localRuntimeStatus?.logPath ??
     "~/Library/Logs/Xiaolanbu/local-bootstrap.log";
+  const localRuntimeStageMessage =
+    localRuntimeStatus?.bootstrapMessage ||
+    (localRuntimeStatus?.ready
+      ? "本地控制台已就绪。"
+      : localRuntimeStatus?.installed
+        ? "运行时已安装，等待初始化。"
+        : "尚未安装 OpenClaw 运行时。");
+  const localDeployButtonLabel = localDeployPending
+    ? localRuntimeStatus?.bootstrapStage === "runtime-download"
+      ? "下载运行时中..."
+      : localRuntimeStatus?.bootstrapStage === "onboarding"
+        ? "初始化中..."
+        : localRuntimeStatus?.bootstrapStage === "service-start"
+          ? "启动控制台中..."
+          : "部署中..."
+    : "立即部署到本机";
 
   return (
     <section className="view view--settings is-visible">
@@ -1496,12 +1515,15 @@ function SettingsView({
               onClick={onCreateLocalDeployment}
               disabled={localDeployPending}
             >
-              {localDeployPending ? "部署中..." : "立即部署到本机"}
+              {localDeployButtonLabel}
             </button>
           </div>
 
           {localDeployError ? (
             <div className="inline-notice inline-notice--error">{localDeployError}</div>
+          ) : null}
+          {localDeployPending && localRuntimeStageMessage ? (
+            <div className="inline-notice inline-notice--info">{localRuntimeStageMessage}</div>
           ) : null}
           {localDeployFeedback ? (
             <div className="inline-notice inline-notice--info">{localDeployFeedback}</div>
@@ -1521,13 +1543,7 @@ function SettingsView({
               <span>运行时状态</span>
               <input
                 type="text"
-                value={
-                  localRuntimeStatus.ready
-                    ? "本地控制台已就绪"
-                    : localRuntimeStatus.installed
-                      ? "运行时已安装，等待初始化"
-                      : "尚未安装 OpenClaw 运行时"
-                }
+                value={localRuntimeStageMessage}
                 disabled
               />
             </label>
@@ -1554,6 +1570,12 @@ function SettingsView({
               <span>日志路径</span>
               <strong>{localBootstrapLogPath}</strong>
             </div>
+            {localRuntimeStatus?.bootstrapLastLine ? (
+              <div className="pref-row">
+                <span>最近进度</span>
+                <strong>{localRuntimeStatus.bootstrapLastLine}</strong>
+              </div>
+            ) : null}
           </div>
 
           <div className="result-actions">
@@ -2425,6 +2447,9 @@ export function App() {
     version: "",
     logPath: "",
     error: "",
+    bootstrapStage: "idle",
+    bootstrapMessage: "",
+    bootstrapLastLine: "",
   });
 
   const activeWorkspaceId = authState.activeWorkspaceId || authState.user?.activeWorkspaceId || "";
@@ -2705,6 +2730,25 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!workspaceState.localDeployPending || !localRuntimeStatus.ready) {
+      return;
+    }
+
+    setWorkspaceState((current) => {
+      if (!current.localDeployPending) {
+        return current;
+      }
+
+      return {
+        ...current,
+        localDeployPending: false,
+        localDeployError: "",
+        localDeployFeedback: "本地 OpenClaw 已就绪，现在可以直接开始聊天。",
+      };
+    });
+  }, [localRuntimeStatus.ready, workspaceState.localDeployPending]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const refreshLocalRuntimeStatus = async () => {
@@ -2724,6 +2768,12 @@ export function App() {
           version: typeof result?.version === "string" ? result.version : "",
           logPath: typeof result?.logPath === "string" ? result.logPath : "",
           error: typeof result?.error === "string" ? result.error : "",
+          bootstrapStage:
+            typeof result?.bootstrapStage === "string" ? result.bootstrapStage : "idle",
+          bootstrapMessage:
+            typeof result?.bootstrapMessage === "string" ? result.bootstrapMessage : "",
+          bootstrapLastLine:
+            typeof result?.bootstrapLastLine === "string" ? result.bootstrapLastLine : "",
         });
       } catch (error) {
         if (cancelled) {
@@ -2737,6 +2787,9 @@ export function App() {
           dashboardPortOpen: false,
           browserControlPortOpen: false,
           error: error instanceof Error ? error.message : "本地运行时状态暂时不可用。",
+          bootstrapStage: "idle",
+          bootstrapMessage: "",
+          bootstrapLastLine: "",
         }));
       }
     };

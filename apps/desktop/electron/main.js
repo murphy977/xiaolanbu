@@ -208,6 +208,72 @@ async function detectLocalOpenClawRuntime() {
   }
 }
 
+function readTail(filePath, maxBytes = 4096) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return "";
+    }
+
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) {
+      return "";
+    }
+
+    const start = Math.max(0, stats.size - maxBytes);
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(stats.size - start);
+      fs.readSync(fd, buffer, 0, buffer.length, start);
+      return buffer.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return "";
+  }
+}
+
+function deriveLocalBootstrapProgress(logTail, runtime) {
+  const normalizedTail = typeof logTail === "string" ? logTail.trim() : "";
+  const lastLine = normalizedTail ? normalizedTail.split("\n").filter(Boolean).pop() ?? "" : "";
+
+  if (runtime.dashboardPortOpen) {
+    return {
+      stage: "ready",
+      message: "本地控制台已启动，可以直接开始聊天。",
+      lastLine,
+    };
+  }
+
+  if (!normalizedTail) {
+    return {
+      stage: runtime.installed ? "runtime-installed" : "idle",
+      message: runtime.installed ? "运行时已安装，等待初始化。" : "尚未开始本地部署。",
+      lastLine: "",
+    };
+  }
+
+  const checks = [
+    ["runtime-download", /downloading Xiaolanbu runtime bundle/i, "正在下载本地运行时包，首次部署通常需要几十秒。"],
+    ["runtime-install", /installed Xiaolanbu runtime bundle/i, "运行时已下载完成，正在准备初始化环境。"],
+    ["runtime-detected", /using packaged Xiaolanbu runtime|using existing OpenClaw/i, "已检测到本地运行时，正在初始化 OpenClaw。"],
+    ["onboarding", /openclaw onboard/i, "正在初始化本地 OpenClaw 配置。"],
+    ["service-start", /loading launch agent|bootstrap finished/i, "正在启动本地控制台服务。"],
+  ];
+
+  for (const [stage, pattern, message] of checks) {
+    if (pattern.test(normalizedTail)) {
+      return { stage, message, lastLine };
+    }
+  }
+
+  return {
+    stage: runtime.installed ? "runtime-installed" : "working",
+    message: runtime.installed ? "运行时已安装，正在继续初始化。" : "正在准备本地部署环境。",
+    lastLine,
+  };
+}
+
 function createLocalBootstrapScript(payload) {
   const {
     deploymentId = "local",
@@ -402,6 +468,16 @@ select_runtime_bundle() {
 }
 
 install_runtime_bundle() {
+  if [[ -x "$XLB_OPENCLAW_ROOT/bin/openclaw" ]]; then
+    log "reusing existing Xiaolanbu runtime bundle"
+    return 0
+  fi
+
+  if [[ -x "$XLB_MANAGED_CLAW_BIN" ]]; then
+    log "reusing existing Xiaolanbu runtime wrapper"
+    return 0
+  fi
+
   local bundle_info
   bundle_info="$(select_runtime_bundle)"
   local bundle_url="\${bundle_info%%|*}"
@@ -773,6 +849,11 @@ async function getLocalOpenClawStatus() {
     checkLocalPortOpen(LOCAL_DEFAULT_DASHBOARD_PORT),
     checkLocalPortOpen(LOCAL_DEFAULT_BROWSER_CONTROL_PORT),
   ]);
+  const logTail = readTail(LOCAL_BOOTSTRAP_LOG);
+  const progress = deriveLocalBootstrapProgress(logTail, {
+    installed: runtime.installed,
+    dashboardPortOpen,
+  });
 
   return {
     ok: runtime.ok,
@@ -784,6 +865,9 @@ async function getLocalOpenClawStatus() {
     ready: dashboardPortOpen,
     logPath: LOCAL_BOOTSTRAP_LOG,
     error: runtime.error,
+    bootstrapStage: progress.stage,
+    bootstrapMessage: progress.message,
+    bootstrapLastLine: progress.lastLine,
   };
 }
 
