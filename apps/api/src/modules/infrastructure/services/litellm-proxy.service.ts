@@ -87,9 +87,24 @@ export class LiteLlmProxyService {
     }
 
     let body: BodyInit | undefined;
+    const normalizedPath = input.path.replace(/^\/+/, "");
+    const requestedJsonBody =
+      input.body !== undefined && input.method !== "GET" && input.method !== "HEAD"
+        ? this.sanitizeOpenAiPayload(input.path, input.body)
+        : undefined;
+    const shouldNormalizeChatStream =
+      normalizedPath === "chat/completions" &&
+      requestedJsonBody &&
+      typeof requestedJsonBody === "object" &&
+      (requestedJsonBody as Record<string, unknown>).stream === true;
+
     if (input.body !== undefined && input.method !== "GET" && input.method !== "HEAD") {
       headers.set("Content-Type", "application/json");
-      body = JSON.stringify(this.sanitizeOpenAiPayload(input.path, input.body));
+      const upstreamPayload =
+        shouldNormalizeChatStream && requestedJsonBody && typeof requestedJsonBody === "object"
+          ? { ...(requestedJsonBody as Record<string, unknown>), stream: false }
+          : requestedJsonBody;
+      body = JSON.stringify(upstreamPayload);
     }
 
     const response = await fetch(targetUrl, {
@@ -98,6 +113,15 @@ export class LiteLlmProxyService {
       body,
       duplex: body ? "half" : undefined,
     } as RequestInit);
+
+    if (shouldNormalizeChatStream) {
+      const upstreamJson = (await response.json()) as Record<string, unknown>;
+      return this.buildNormalizedChatStreamResponse({
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: upstreamJson,
+      });
+    }
 
     return {
       status: response.status,
@@ -328,5 +352,65 @@ export class LiteLlmProxyService {
     }
 
     return next;
+  }
+
+  private buildNormalizedChatStreamResponse(input: {
+    status: number;
+    headers: Record<string, string>;
+    body: Record<string, unknown>;
+  }) {
+    const message =
+      Array.isArray(input.body.choices) && input.body.choices[0] && typeof input.body.choices[0] === "object"
+        ? ((input.body.choices[0] as Record<string, unknown>).message as Record<string, unknown> | undefined)
+        : undefined;
+    const content = typeof message?.content === "string" ? message.content : "";
+    const completionId = typeof input.body.id === "string" ? input.body.id : "chatcmpl-xlb";
+    const created =
+      typeof input.body.created === "number" ? input.body.created : Math.floor(Date.now() / 1000);
+    const model = typeof input.body.model === "string" ? input.body.model : "unknown";
+
+    const chunks = [
+      this.formatSseChunk({
+        id: completionId,
+        created,
+        model,
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: { role: "assistant" } }],
+      }),
+      ...(content
+        ? [
+            this.formatSseChunk({
+              id: completionId,
+              created,
+              model,
+              object: "chat.completion.chunk",
+              choices: [{ index: 0, delta: { content } }],
+            }),
+          ]
+        : []),
+      this.formatSseChunk({
+        id: completionId,
+        created,
+        model,
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      }),
+      "data: [DONE]\n\n",
+    ];
+
+    return {
+      status: input.status,
+      headers: {
+        ...input.headers,
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+      },
+      body: Readable.from(chunks),
+      text: null,
+    };
+  }
+
+  private formatSseChunk(payload: Record<string, unknown>) {
+    return `data: ${JSON.stringify(payload)}\n\n`;
   }
 }
