@@ -14,7 +14,7 @@ http://{$SERVER_IP} {
   }
 
   handle /v1/* {
-    reverse_proxy litellm:4000 {
+    reverse_proxy api:3030 {
       flush_interval -1
       transport http {
         versions 1.1
