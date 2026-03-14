@@ -120,7 +120,7 @@ manifest.packages.push(nextEntry);
 manifest.packages.sort((left, right) =>
   `${left.platform}-${left.arch}`.localeCompare(`${right.platform}-${right.arch}`),
 );
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\\n");
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 EOF
 
 echo "Runtime bundle ready:"
