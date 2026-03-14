@@ -354,6 +354,10 @@ function buildLocalBootstrapFromDeployment(deployment) {
     tokenSource: access.tokenSource ?? "desktop-local-bootstrap (gateway.auth.token)",
     logPath: metadata.logPath ?? "~/Library/Logs/Xiaolanbu/local-bootstrap.log",
     runtimePackages: Array.isArray(metadata.runtimePackages) ? metadata.runtimePackages : [],
+    gatewayTunnel:
+      metadata.gatewayTunnel && typeof metadata.gatewayTunnel === "object"
+        ? metadata.gatewayTunnel
+        : undefined,
   };
 }
 

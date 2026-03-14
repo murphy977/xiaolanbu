@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 
 import { BadRequestException, Injectable } from "@nestjs/common";
 
@@ -391,6 +392,7 @@ export class DeploymentsService {
     const tokenSource = "desktop-local-bootstrap (gateway.auth.token)";
     const logPath = "~/Library/Logs/Xiaolanbu/local-bootstrap.log";
     const runtimePackages = this.runtimeService.getBootstrapPackagesForPlatform("darwin");
+    const gatewayTunnel = this.resolveLocalGatewayTunnel(gatewayProvision.baseUrl);
 
     const deployment = await this.storeService.createDeployment({
       id: deploymentId,
@@ -426,6 +428,7 @@ export class DeploymentsService {
         gatewayToken,
         logPath,
         runtimePackages,
+        gatewayTunnel,
         gatewayTokenId: gatewayProvision.tokenId,
         gatewayKeyName: gatewayProvision.keyName,
         gatewayKeyAlias: gatewayProvision.keyAlias,
@@ -451,6 +454,7 @@ export class DeploymentsService {
         tokenSource,
         logPath,
         runtimePackages,
+        gatewayTunnel,
       },
     };
   }
@@ -915,6 +919,56 @@ export class DeploymentsService {
         process.env.XLB_LOCAL_PROVIDER_ID?.trim() ||
         "openai",
     };
+  }
+
+  private resolveLocalGatewayTunnel(baseUrl: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      return undefined;
+    }
+
+    if (
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "::1"
+    ) {
+      return undefined;
+    }
+
+    const user = process.env.XLB_GATEWAY_TUNNEL_USER?.trim() || "xlb-tunnel";
+    const remotePort = Number(process.env.XLB_GATEWAY_TUNNEL_REMOTE_PORT?.trim() || "3030");
+    const localPort = Number(process.env.XLB_GATEWAY_TUNNEL_LOCAL_PORT?.trim() || "43030");
+    const privateKey =
+      this.readGatewayTunnelPrivateKey() ||
+      process.env.XLB_GATEWAY_TUNNEL_PRIVATE_KEY?.trim() ||
+      "";
+
+    return {
+      host: parsed.hostname,
+      user,
+      localPort: Number.isFinite(localPort) && localPort > 0 ? localPort : 43030,
+      remotePort: Number.isFinite(remotePort) && remotePort > 0 ? remotePort : 3030,
+      privateKey,
+    };
+  }
+
+  private readGatewayTunnelPrivateKey() {
+    const keyPath = process.env.XLB_GATEWAY_TUNNEL_PRIVATE_KEY_PATH?.trim();
+    if (!keyPath) {
+      return "";
+    }
+
+    if (!existsSync(keyPath)) {
+      return "";
+    }
+
+    try {
+      return readFileSync(keyPath, "utf8").trim();
+    } catch {
+      return "";
+    }
   }
 
   private roundCurrency(value: number) {

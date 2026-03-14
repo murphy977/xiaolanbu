@@ -325,6 +325,20 @@ function createLocalBootstrapScript(payload) {
   let effectiveBaseUrl = baseUrl;
   let tunnelHost = "";
   let tunnelEnabled = false;
+  const gatewayTunnel =
+    payload && typeof payload.gatewayTunnel === "object" ? payload.gatewayTunnel : null;
+  const gatewayTunnelUser =
+    typeof gatewayTunnel?.user === "string" && gatewayTunnel.user.trim()
+      ? gatewayTunnel.user.trim()
+      : "root";
+  const gatewayTunnelLocalPort = Number(
+    gatewayTunnel?.localPort || LOCAL_GATEWAY_TUNNEL_PORT,
+  );
+  const gatewayTunnelRemotePort = Number(
+    gatewayTunnel?.remotePort || LOCAL_GATEWAY_TUNNEL_REMOTE_PORT,
+  );
+  const gatewayTunnelPrivateKey =
+    typeof gatewayTunnel?.privateKey === "string" ? gatewayTunnel.privateKey.trim() : "";
 
   try {
     const parsedBaseUrl = new URL(baseUrl);
@@ -335,7 +349,13 @@ function createLocalBootstrapScript(payload) {
     if (!isLoopbackHost && fs.existsSync(LOCAL_GATEWAY_TUNNEL_KEY_PATH)) {
       tunnelEnabled = true;
       tunnelHost = parsedBaseUrl.hostname;
-      effectiveBaseUrl = `http://127.0.0.1:${String(LOCAL_GATEWAY_TUNNEL_PORT)}${parsedBaseUrl.pathname.replace(/\/$/, "") || ""}`;
+      effectiveBaseUrl = `http://127.0.0.1:${String(gatewayTunnelLocalPort)}${parsedBaseUrl.pathname.replace(/\/$/, "") || ""}`;
+    } else if (!isLoopbackHost && gatewayTunnelPrivateKey) {
+      tunnelEnabled = true;
+      tunnelHost = typeof gatewayTunnel?.host === "string" && gatewayTunnel.host.trim()
+        ? gatewayTunnel.host.trim()
+        : parsedBaseUrl.hostname;
+      effectiveBaseUrl = `http://127.0.0.1:${String(gatewayTunnelLocalPort)}${parsedBaseUrl.pathname.replace(/\/$/, "") || ""}`;
     }
   } catch {
     effectiveBaseUrl = baseUrl;
@@ -376,9 +396,13 @@ export XLB_RUNTIME_X64_SHA256=${shellEscape(runtimeX64?.sha256 ?? "")}
 export XLB_GATEWAY_BASE_URL=${shellEscape(effectiveBaseUrl)}
 export XLB_GATEWAY_TUNNEL_ENABLED=${shellEscape(tunnelEnabled ? "1" : "0")}
 export XLB_GATEWAY_TUNNEL_HOST=${shellEscape(tunnelHost)}
-export XLB_GATEWAY_TUNNEL_LOCAL_PORT=${shellEscape(String(LOCAL_GATEWAY_TUNNEL_PORT))}
-export XLB_GATEWAY_TUNNEL_REMOTE_PORT=${shellEscape(String(LOCAL_GATEWAY_TUNNEL_REMOTE_PORT))}
+export XLB_GATEWAY_TUNNEL_USER=${shellEscape(gatewayTunnelUser)}
+export XLB_GATEWAY_TUNNEL_LOCAL_PORT=${shellEscape(String(gatewayTunnelLocalPort))}
+export XLB_GATEWAY_TUNNEL_REMOTE_PORT=${shellEscape(String(gatewayTunnelRemotePort))}
 export XLB_GATEWAY_TUNNEL_KEY=${shellEscape(LOCAL_GATEWAY_TUNNEL_KEY_PATH)}
+export XLB_GATEWAY_TUNNEL_PRIVATE_KEY_B64=${shellEscape(
+    gatewayTunnelPrivateKey ? Buffer.from(gatewayTunnelPrivateKey, "utf8").toString("base64") : "",
+  )}
 export XLB_LOCAL_SESSIONS_DIR=${shellEscape(path.join(LOCAL_OPENCLAW_STATE_DIR, "agents", "main", "sessions"))}
 
 iso_now() {
@@ -462,8 +486,18 @@ ensure_gateway_tunnel() {
   fi
 
   if [[ ! -f "$XLB_GATEWAY_TUNNEL_KEY" ]]; then
-    log "gateway tunnel key is missing at $XLB_GATEWAY_TUNNEL_KEY"
-    exit 1
+    if [[ -n "$XLB_GATEWAY_TUNNEL_PRIVATE_KEY_B64" ]]; then
+      mkdir -p "$(dirname "$XLB_GATEWAY_TUNNEL_KEY")"
+      if base64 --help 2>/dev/null | grep -q -- '--decode'; then
+        printf '%s' "$XLB_GATEWAY_TUNNEL_PRIVATE_KEY_B64" | base64 --decode > "$XLB_GATEWAY_TUNNEL_KEY"
+      else
+        printf '%s' "$XLB_GATEWAY_TUNNEL_PRIVATE_KEY_B64" | base64 -D > "$XLB_GATEWAY_TUNNEL_KEY"
+      fi
+      log "installed bundled Xiaolanbu gateway tunnel key"
+    else
+      log "gateway tunnel key is missing at $XLB_GATEWAY_TUNNEL_KEY"
+      exit 1
+    fi
   fi
 
   chmod 600 "$XLB_GATEWAY_TUNNEL_KEY" 2>/dev/null || true
@@ -483,7 +517,7 @@ ensure_gateway_tunnel() {
     -o UserKnownHostsFile=/dev/null \
     -i "$XLB_GATEWAY_TUNNEL_KEY" \
     -L "$XLB_GATEWAY_TUNNEL_LOCAL_PORT":127.0.0.1:"$XLB_GATEWAY_TUNNEL_REMOTE_PORT" \
-    root@"$XLB_GATEWAY_TUNNEL_HOST"
+    "$XLB_GATEWAY_TUNNEL_USER"@"$XLB_GATEWAY_TUNNEL_HOST"
 
   for _ in $(seq 1 15); do
     if lsof -n -iTCP:"$XLB_GATEWAY_TUNNEL_LOCAL_PORT" -sTCP:LISTEN >/dev/null 2>&1; then

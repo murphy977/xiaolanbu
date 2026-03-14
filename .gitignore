@@ -15,5 +15,6 @@ apps/api/dist/
 apps/desktop/node_modules/
 apps/desktop/app-dist/
 runtime-dist/
+runtime-secrets/
 
 deploy/single-node/.env
