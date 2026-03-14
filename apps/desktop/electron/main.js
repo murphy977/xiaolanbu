@@ -698,7 +698,7 @@ const config = JSON.parse(raw);
 config.agents ||= {};
 config.agents.defaults ||= {};
 config.agents.defaults.workspace = workspaceDir;
-fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\\n");
 EOF
 fi
 
