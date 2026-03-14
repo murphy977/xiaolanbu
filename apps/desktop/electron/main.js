@@ -13,11 +13,11 @@ const LOCAL_APP_SUPPORT_DIR = path.join(
 );
 const LOCAL_LOG_DIR = path.join(os.homedir(), "Library", "Logs", "Xiaolanbu");
 const LOCAL_BOOTSTRAP_LOG = path.join(LOCAL_LOG_DIR, "local-bootstrap.log");
-const LOCAL_OPENCLAW_PROFILE = "xiaolanbu-local";
 const LEGACY_LOCAL_OPENCLAW_STATE_DIR = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-state");
-const LOCAL_OPENCLAW_STATE_DIR = path.join(os.homedir(), `.openclaw-${LOCAL_OPENCLAW_PROFILE}`);
+const LEGACY_LOCAL_PROFILE_STATE_DIR = path.join(os.homedir(), ".openclaw-xiaolanbu-local");
+const LOCAL_OPENCLAW_STATE_DIR = path.join(os.homedir(), ".openclaw");
 const LOCAL_OPENCLAW_CONFIG_PATH = path.join(LOCAL_OPENCLAW_STATE_DIR, "openclaw.json");
-const LOCAL_OPENCLAW_WORKSPACE_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-workspaces");
+const LOCAL_OPENCLAW_WORKSPACE_DIR = path.join(LOCAL_OPENCLAW_STATE_DIR, "workspace");
 const LOCAL_OPENCLAW_AGENT_DIR = path.join(
   LOCAL_OPENCLAW_STATE_DIR,
   "agents",
@@ -317,9 +317,7 @@ function createLocalBootstrapScript(payload) {
   const runtimeX64 = runtimePackagesByArch.get("x64") ?? null;
 
   ensureDirectory(LOCAL_LOG_DIR);
-
-  const localProfile = LOCAL_OPENCLAW_PROFILE;
-  const localWorkspaceDir = path.join(LOCAL_OPENCLAW_WORKSPACE_ROOT, localProfile);
+  const localWorkspaceDir = LOCAL_OPENCLAW_WORKSPACE_DIR;
 
   const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-local-"));
   const launcherPath = path.join(launcherDir, "bootstrap-local-openclaw.sh");
@@ -332,12 +330,12 @@ export HOME=${shellEscape(os.homedir())}
 export USER=${shellEscape(os.userInfo().username)}
 export LOGNAME=${shellEscape(os.userInfo().username)}
 export OPENCLAW_API_KEY=${shellEscape(apiKey)}
-export OPENCLAW_PROFILE=${shellEscape(localProfile)}
 export OPENCLAW_STATE_DIR=${shellEscape(LOCAL_OPENCLAW_STATE_DIR)}
 export OPENCLAW_CONFIG_PATH=${shellEscape(LOCAL_OPENCLAW_CONFIG_PATH)}
 export XLB_LOCAL_AGENT_DIR=${shellEscape(LOCAL_OPENCLAW_AGENT_DIR)}
 export XLB_LOCAL_WORKSPACE_DIR=${shellEscape(localWorkspaceDir)}
 export XLB_LEGACY_STATE_DIR=${shellEscape(LEGACY_LOCAL_OPENCLAW_STATE_DIR)}
+export XLB_LEGACY_PROFILE_STATE_DIR=${shellEscape(LEGACY_LOCAL_PROFILE_STATE_DIR)}
 export XLB_OPENCLAW_ROOT=${shellEscape(LOCAL_MANAGED_RUNTIME_ROOT)}
 export XLB_NODE_ROOT=${shellEscape(LOCAL_MANAGED_NODE_ROOT)}
 export XLB_NODE_VERSION=${shellEscape(LOCAL_MANAGED_NODE_VERSION)}
@@ -365,6 +363,16 @@ if [[ -d "$XLB_LEGACY_STATE_DIR" && ! -e "$OPENCLAW_STATE_DIR" ]]; then
     cp -R "$XLB_LEGACY_STATE_DIR" "$OPENCLAW_STATE_DIR"
   fi
   echo "[xiaolanbu-local] migrated legacy state dir $XLB_LEGACY_STATE_DIR -> $OPENCLAW_STATE_DIR"
+fi
+
+if [[ -d "$XLB_LEGACY_PROFILE_STATE_DIR" && ! -e "$OPENCLAW_STATE_DIR" ]]; then
+  mkdir -p "$(dirname "$OPENCLAW_STATE_DIR")"
+  if command -v ditto >/dev/null 2>&1; then
+    ditto "$XLB_LEGACY_PROFILE_STATE_DIR" "$OPENCLAW_STATE_DIR"
+  else
+    cp -R "$XLB_LEGACY_PROFILE_STATE_DIR" "$OPENCLAW_STATE_DIR"
+  fi
+  echo "[xiaolanbu-local] migrated legacy profile state dir $XLB_LEGACY_PROFILE_STATE_DIR -> $OPENCLAW_STATE_DIR"
 fi
 
 mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR" "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_WORKSPACE_DIR" "$XLB_LOCAL_AGENT_DIR"
@@ -710,7 +718,8 @@ echo "[xiaolanbu-local] running onboard"
   --skip-ui \\
   --skip-channels \\
   --skip-skills \\
-  --skip-search
+  --skip-search \\
+  --workspace ${shellEscape(localWorkspaceDir)}
 
 if [[ -x "$XLB_MANAGED_NODE_BIN" && -f "$OPENCLAW_CONFIG_PATH" ]]; then
   "$XLB_MANAGED_NODE_BIN" <<'EOF'
