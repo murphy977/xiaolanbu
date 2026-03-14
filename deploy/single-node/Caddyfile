@@ -5,15 +5,29 @@
 
 http://{$SERVER_IP} {
   handle_path /api/* {
-    reverse_proxy api:3030
+    reverse_proxy api:3030 {
+      flush_interval -1
+      transport http {
+        versions 1.1
+      }
+    }
   }
 
   handle /v1/* {
-    reverse_proxy litellm:4000
+    reverse_proxy litellm:4000 {
+      flush_interval -1
+      transport http {
+        versions 1.1
+      }
+    }
   }
 
   handle /key/* {
-    reverse_proxy litellm:4000
+    reverse_proxy litellm:4000 {
+      transport http {
+        versions 1.1
+      }
+    }
   }
 
   handle {

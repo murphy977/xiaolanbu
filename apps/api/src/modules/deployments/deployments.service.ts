@@ -369,7 +369,13 @@ export class DeploymentsService {
 
   private async createLocalDeployment(body: CreateDeploymentDto) {
     const deploymentId = this.createDeploymentId();
-    const gatewayProvision = this.resolveLocalProvision(body, deploymentId);
+    const liteLlmProvision = await this.resolveGatewayProvision({
+      deploymentId,
+      workspaceId: body.workspaceId,
+      deploymentName: body.name,
+      requestedModelId: body.openclawModelId?.trim() || process.env.XLB_GATEWAY_MODEL || "qwen35-plus",
+    });
+    const gatewayProvision = this.resolveLocalProvision(body, deploymentId, liteLlmProvision);
 
     const gatewayPort = body.openclawGatewayPort ?? 18789;
     const gatewayBind = body.openclawGatewayBind ?? "loopback";
@@ -851,7 +857,35 @@ export class DeploymentsService {
   return this.resolveGatewayKeyBudget() ?? 0;
   }
 
-  private resolveLocalProvision(body: CreateDeploymentDto, deploymentId: string) {
+  private resolveLocalProvision(
+    body: CreateDeploymentDto,
+    deploymentId: string,
+    gatewayProvision?: {
+      apiKey: string;
+      tokenId: string;
+      keyName?: string;
+      keyAlias?: string | null;
+      baseUrl: string;
+      modelId: string;
+      providerId: string;
+    } | null,
+  ) {
+    const publicApiBaseUrl =
+      process.env.XLB_API_PUBLIC_BASE_URL?.trim() ||
+      process.env.XLB_PUBLIC_API_BASE_URL?.trim();
+
+    if (gatewayProvision && publicApiBaseUrl) {
+      return {
+        apiKey: gatewayProvision.apiKey,
+        tokenId: gatewayProvision.tokenId,
+        keyName: gatewayProvision.keyName,
+        keyAlias: gatewayProvision.keyAlias,
+        baseUrl: body.openclawBaseUrl?.trim() || publicApiBaseUrl,
+        modelId: body.openclawModelId?.trim() || gatewayProvision.modelId,
+        providerId: body.openclawProviderId?.trim() || gatewayProvision.providerId,
+      };
+    }
+
     const apiKey = body.openclawApiKey?.trim() || process.env.DASHSCOPE_API_KEY?.trim();
     if (!apiKey) {
       throw new BadRequestException("本地部署缺少 DASHSCOPE_API_KEY，暂时无法完成初始化。");
