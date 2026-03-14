@@ -35,6 +35,13 @@ const LOCAL_MANAGED_CLAW_BIN = path.join(LOCAL_MANAGED_WRAPPER_BIN_DIR, "opencla
 const LOCAL_MANAGED_NODE_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "node");
 const LOCAL_MANAGED_NPM_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "npm");
 const LOCAL_MANAGED_NODE_VERSION = "22.22.1";
+const LOCAL_CLEAN_WORKSPACE_KEEP = new Set([
+  ".git",
+  ".gitignore",
+  ".openclaw",
+  "README.md",
+  "readme.md",
+]);
 
 function getLocalManagedPathEntries() {
   return [
@@ -126,6 +133,10 @@ function launchDetached(command, args) {
 
 function ensureDirectory(targetPath) {
   fs.mkdirSync(targetPath, { recursive: true });
+}
+
+function renderLocalWorkspaceCleanupList() {
+  return [...LOCAL_CLEAN_WORKSPACE_KEEP].map((name) => JSON.stringify(name)).join(", ");
 }
 
 function runSpawnCapture(command, args, options = {}) {
@@ -312,7 +323,7 @@ function createLocalBootstrapScript(payload) {
 
   const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-local-"));
   const launcherPath = path.join(launcherDir, "bootstrap-local-openclaw.sh");
-  const script = `#!/bin/bash
+const script = `#!/bin/bash
 set -euo pipefail
 exec > >(tee -a ${shellEscape(LOCAL_BOOTSTRAP_LOG)}) 2>&1
 
@@ -719,6 +730,22 @@ config.models.providers ||= {};
 config.models.providers.openai ||= {};
 config.models.providers.openai.api = "openai-completions";
 config.models.providers.openai.apiKey = apiKey;
+config.models.providers.openai.baseUrl ||= ${shellEscape(baseUrl)};
+config.models.providers.openai.models ||= [];
+if (config.models.providers.openai.models.length === 0) {
+  config.models.providers.openai.models.push({ id: ${shellEscape(modelId)} });
+}
+for (const model of config.models.providers.openai.models) {
+  if (model && typeof model === "object") {
+    model.contextWindow = Math.max(Number(model.contextWindow || 0), 262144);
+    model.maxTokens = Math.max(Number(model.maxTokens || 0), 8192);
+    model.reasoning = false;
+    model.compat ||= {};
+    model.compat.supportsUsageInStreaming = false;
+    model.compat.supportsStrictMode = false;
+    model.compat.thinkingFormat = "qwen";
+  }
+}
 config.agents ||= {};
 config.agents.defaults ||= {};
 config.agents.defaults.workspace = workspaceDir;
@@ -727,6 +754,10 @@ config.auth.profiles ||= {};
 config.auth.profiles["openai:default"] = {
   provider: "openai",
   mode: "api_key",
+};
+config.tools = {
+  profile: "minimal",
+  deny: ["session_status"],
 };
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\\n");
 
@@ -750,6 +781,26 @@ if (agentDir && apiKey) {
   store.lastGood.openai = "openai:default";
   fs.mkdirSync(agentDir, { recursive: true });
   fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + "\\n");
+}
+
+if (workspaceDir) {
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  const keep = new Set([${renderLocalWorkspaceCleanupList()}]);
+  for (const entry of fs.readdirSync(workspaceDir)) {
+    if (keep.has(entry)) {
+      continue;
+    }
+    fs.rmSync(path.join(workspaceDir, entry), { recursive: true, force: true });
+  }
+  const readmePath = path.join(workspaceDir, "README.md");
+  const readme = [
+    "# Xiaolanbu Local Chat",
+    "",
+    "This workspace is intentionally minimal.",
+    "OpenClaw local chat should not preload persona, memory, or bootstrap files here.",
+    "",
+  ].join("\\n");
+  fs.writeFileSync(readmePath, readme, "utf8");
 }
 EOF
 fi

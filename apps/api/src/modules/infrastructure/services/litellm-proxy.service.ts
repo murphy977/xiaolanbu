@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 
 export interface LiteLlmVirtualKeyResult {
@@ -44,6 +46,67 @@ export interface LiteLlmSpendLogRecord {
 
 @Injectable()
 export class LiteLlmProxyService {
+  async proxyOpenAiRequest(input: {
+    path: string;
+    method: string;
+    headers?: Record<string, string | string[] | undefined>;
+    body?: unknown;
+  }) {
+    const baseUrl = this.getProxyBaseUrl();
+
+    if (!baseUrl) {
+      throw new InternalServerErrorException(
+        "LiteLLM proxy is not configured. Set LITELLM_PROXY_URL.",
+      );
+    }
+
+    const targetUrl = `${baseUrl}/${input.path.replace(/^\/+/, "")}`;
+    const headers = new Headers();
+
+    for (const [key, value] of Object.entries(input.headers ?? {})) {
+      if (value === undefined) {
+        continue;
+      }
+
+      const lowerKey = key.toLowerCase();
+      if (
+        lowerKey === "host" ||
+        lowerKey === "content-length" ||
+        lowerKey === "connection"
+      ) {
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          headers.append(key, item);
+        }
+      } else {
+        headers.set(key, value);
+      }
+    }
+
+    let body: BodyInit | undefined;
+    if (input.body !== undefined && input.method !== "GET" && input.method !== "HEAD") {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(this.sanitizeOpenAiPayload(input.path, input.body));
+    }
+
+    const response = await fetch(targetUrl, {
+      method: input.method,
+      headers,
+      body,
+      duplex: body ? "half" : undefined,
+    } as RequestInit);
+
+    return {
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: response.body ? Readable.fromWeb(response.body as never) : null,
+      text: response.body ? null : await response.text(),
+    };
+  }
+
   async generateVirtualKey(input: {
     models: string[];
     maxBudget?: number;
@@ -234,5 +297,31 @@ export class LiteLlmProxyService {
       process.env.XLB_GATEWAY_PUBLIC_BASE_URL?.trim() ??
       process.env.LITELLM_PUBLIC_BASE_URL?.trim();
     return value ? value.replace(/\/+$/, "") : null;
+  }
+
+  private sanitizeOpenAiPayload(path: string, payload: unknown) {
+    if (!payload || typeof payload !== "object") {
+      return payload;
+    }
+
+    const normalizedPath = path.replace(/^\/+/, "");
+    if (normalizedPath !== "chat/completions") {
+      return payload;
+    }
+
+    const next = { ...(payload as Record<string, unknown>) };
+    if (Array.isArray(next.tools) && next.tools.length === 0) {
+      delete next.tools;
+
+      if (next.tool_choice !== undefined) {
+        delete next.tool_choice;
+      }
+
+      if (next.parallel_tool_calls !== undefined) {
+        delete next.parallel_tool_calls;
+      }
+    }
+
+    return next;
   }
 }
