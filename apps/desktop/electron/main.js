@@ -16,6 +16,12 @@ const LOCAL_BOOTSTRAP_LOG = path.join(LOCAL_LOG_DIR, "local-bootstrap.log");
 const LOCAL_OPENCLAW_STATE_DIR = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-state");
 const LOCAL_OPENCLAW_CONFIG_PATH = path.join(LOCAL_OPENCLAW_STATE_DIR, "openclaw.json");
 const LOCAL_OPENCLAW_WORKSPACE_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-workspaces");
+const LOCAL_OPENCLAW_AGENT_DIR = path.join(
+  LOCAL_OPENCLAW_STATE_DIR,
+  "agents",
+  "main",
+  "agent",
+);
 const LOCAL_DEFAULT_DASHBOARD_PORT = 18789;
 const LOCAL_DEFAULT_BROWSER_CONTROL_PORT = 18791;
 const LOCAL_MANAGED_RUNTIME_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "runtime", "openclaw");
@@ -320,6 +326,7 @@ export OPENCLAW_API_KEY=${shellEscape(apiKey)}
 export OPENCLAW_PROFILE=${shellEscape(localProfile)}
 export OPENCLAW_STATE_DIR=${shellEscape(LOCAL_OPENCLAW_STATE_DIR)}
 export OPENCLAW_CONFIG_PATH=${shellEscape(LOCAL_OPENCLAW_CONFIG_PATH)}
+export XLB_LOCAL_AGENT_DIR=${shellEscape(LOCAL_OPENCLAW_AGENT_DIR)}
 export XLB_LOCAL_WORKSPACE_DIR=${shellEscape(localWorkspaceDir)}
 export XLB_OPENCLAW_ROOT=${shellEscape(LOCAL_MANAGED_RUNTIME_ROOT)}
 export XLB_NODE_ROOT=${shellEscape(LOCAL_MANAGED_NODE_ROOT)}
@@ -340,7 +347,7 @@ iso_now() {
 
 echo "[xiaolanbu-local] bootstrap started at $(iso_now)"
 
-mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR" "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_WORKSPACE_DIR"
+mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR" "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_WORKSPACE_DIR" "$XLB_LOCAL_AGENT_DIR"
 
 log() {
   echo "[xiaolanbu-local] $*"
@@ -688,8 +695,11 @@ echo "[xiaolanbu-local] running onboard"
 if [[ -x "$XLB_MANAGED_NODE_BIN" && -f "$OPENCLAW_CONFIG_PATH" ]]; then
   "$XLB_MANAGED_NODE_BIN" <<'EOF'
 const fs = require("fs");
+const path = require("path");
 const configPath = process.env.OPENCLAW_CONFIG_PATH;
+const agentDir = process.env.XLB_LOCAL_AGENT_DIR;
 const workspaceDir = process.env.XLB_LOCAL_WORKSPACE_DIR;
+const apiKey = process.env.OPENCLAW_API_KEY;
 if (!configPath || !workspaceDir) {
   process.exit(0);
 }
@@ -698,7 +708,35 @@ const config = JSON.parse(raw);
 config.agents ||= {};
 config.agents.defaults ||= {};
 config.agents.defaults.workspace = workspaceDir;
+config.auth ||= {};
+config.auth.profiles ||= {};
+config.auth.profiles["openai:default"] = {
+  provider: "openai",
+  mode: "api_key",
+};
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\\n");
+
+if (agentDir && apiKey) {
+  const authStorePath = path.join(agentDir, "auth-profiles.json");
+  let store = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
+  if (fs.existsSync(authStorePath)) {
+    try {
+      store = JSON.parse(fs.readFileSync(authStorePath, "utf8"));
+    } catch {}
+  }
+  store.version = 1;
+  store.profiles ||= {};
+  store.lastGood ||= {};
+  store.usageStats ||= {};
+  store.profiles["openai:default"] = {
+    type: "api_key",
+    provider: "openai",
+    key: apiKey,
+  };
+  store.lastGood.openai = "openai:default";
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + "\\n");
+}
 EOF
 fi
 
