@@ -35,6 +35,13 @@ const LOCAL_MANAGED_CLAW_BIN = path.join(LOCAL_MANAGED_WRAPPER_BIN_DIR, "opencla
 const LOCAL_MANAGED_NODE_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "node");
 const LOCAL_MANAGED_NPM_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "npm");
 const LOCAL_MANAGED_NODE_VERSION = "22.22.1";
+const LOCAL_GATEWAY_TUNNEL_KEY_PATH = path.join(
+  LOCAL_APP_SUPPORT_DIR,
+  "keys",
+  "xlb-gateway-tunnel",
+);
+const LOCAL_GATEWAY_TUNNEL_PORT = 43030;
+const LOCAL_GATEWAY_TUNNEL_REMOTE_PORT = 3030;
 const LOCAL_CLEAN_WORKSPACE_KEEP = new Set([
   ".git",
   ".gitignore",
@@ -315,6 +322,24 @@ function createLocalBootstrapScript(payload) {
   );
   const runtimeArm64 = runtimePackagesByArch.get("arm64") ?? null;
   const runtimeX64 = runtimePackagesByArch.get("x64") ?? null;
+  let effectiveBaseUrl = baseUrl;
+  let tunnelHost = "";
+  let tunnelEnabled = false;
+
+  try {
+    const parsedBaseUrl = new URL(baseUrl);
+    const isLoopbackHost =
+      parsedBaseUrl.hostname === "127.0.0.1" ||
+      parsedBaseUrl.hostname === "localhost" ||
+      parsedBaseUrl.hostname === "::1";
+    if (!isLoopbackHost && fs.existsSync(LOCAL_GATEWAY_TUNNEL_KEY_PATH)) {
+      tunnelEnabled = true;
+      tunnelHost = parsedBaseUrl.hostname;
+      effectiveBaseUrl = `http://127.0.0.1:${String(LOCAL_GATEWAY_TUNNEL_PORT)}${parsedBaseUrl.pathname.replace(/\/$/, "") || ""}`;
+    }
+  } catch {
+    effectiveBaseUrl = baseUrl;
+  }
 
   ensureDirectory(LOCAL_LOG_DIR);
   const localWorkspaceDir = LOCAL_OPENCLAW_WORKSPACE_DIR;
@@ -348,6 +373,13 @@ export XLB_RUNTIME_ARM64_URL=${shellEscape(runtimeArm64?.downloadUrl ?? "")}
 export XLB_RUNTIME_ARM64_SHA256=${shellEscape(runtimeArm64?.sha256 ?? "")}
 export XLB_RUNTIME_X64_URL=${shellEscape(runtimeX64?.downloadUrl ?? "")}
 export XLB_RUNTIME_X64_SHA256=${shellEscape(runtimeX64?.sha256 ?? "")}
+export XLB_GATEWAY_BASE_URL=${shellEscape(effectiveBaseUrl)}
+export XLB_GATEWAY_TUNNEL_ENABLED=${shellEscape(tunnelEnabled ? "1" : "0")}
+export XLB_GATEWAY_TUNNEL_HOST=${shellEscape(tunnelHost)}
+export XLB_GATEWAY_TUNNEL_LOCAL_PORT=${shellEscape(String(LOCAL_GATEWAY_TUNNEL_PORT))}
+export XLB_GATEWAY_TUNNEL_REMOTE_PORT=${shellEscape(String(LOCAL_GATEWAY_TUNNEL_REMOTE_PORT))}
+export XLB_GATEWAY_TUNNEL_KEY=${shellEscape(LOCAL_GATEWAY_TUNNEL_KEY_PATH)}
+export XLB_LOCAL_SESSIONS_DIR=${shellEscape(path.join(LOCAL_OPENCLAW_STATE_DIR, "agents", "main", "sessions"))}
 
 iso_now() {
   date "+%Y-%m-%dT%H:%M:%S%z"
@@ -417,6 +449,52 @@ verify_sha256() {
     return
   fi
   return 0
+}
+
+ensure_gateway_tunnel() {
+  if [[ "$XLB_GATEWAY_TUNNEL_ENABLED" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$XLB_GATEWAY_TUNNEL_HOST" ]]; then
+    log "gateway tunnel requested but no host was provided"
+    exit 1
+  fi
+
+  if [[ ! -f "$XLB_GATEWAY_TUNNEL_KEY" ]]; then
+    log "gateway tunnel key is missing at $XLB_GATEWAY_TUNNEL_KEY"
+    exit 1
+  fi
+
+  chmod 600 "$XLB_GATEWAY_TUNNEL_KEY" 2>/dev/null || true
+
+  local existing_pids=""
+  existing_pids="$(lsof -tiTCP:"$XLB_GATEWAY_TUNNEL_LOCAL_PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$existing_pids" ]]; then
+    log "reusing existing Xiaolanbu gateway tunnel on 127.0.0.1:$XLB_GATEWAY_TUNNEL_LOCAL_PORT"
+    return 0
+  fi
+
+  log "starting Xiaolanbu gateway tunnel to $XLB_GATEWAY_TUNNEL_HOST:$XLB_GATEWAY_TUNNEL_REMOTE_PORT"
+  ssh -f -N \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -i "$XLB_GATEWAY_TUNNEL_KEY" \
+    -L "$XLB_GATEWAY_TUNNEL_LOCAL_PORT":127.0.0.1:"$XLB_GATEWAY_TUNNEL_REMOTE_PORT" \
+    root@"$XLB_GATEWAY_TUNNEL_HOST"
+
+  for _ in $(seq 1 15); do
+    if lsof -n -iTCP:"$XLB_GATEWAY_TUNNEL_LOCAL_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      log "Xiaolanbu gateway tunnel is ready on 127.0.0.1:$XLB_GATEWAY_TUNNEL_LOCAL_PORT"
+      return 0
+    fi
+    sleep 1
+  done
+
+  log "Xiaolanbu gateway tunnel did not become ready in time"
+  exit 1
 }
 
 version_gte() {
@@ -699,6 +777,13 @@ if [[ -z "$OPENCLAW_BIN" ]]; then
 fi
 
 echo "[xiaolanbu-local] using openclaw at $OPENCLAW_BIN"
+ensure_gateway_tunnel
+
+if [[ -d "$XLB_LOCAL_SESSIONS_DIR" ]]; then
+  rm -rf "$XLB_LOCAL_SESSIONS_DIR"
+fi
+mkdir -p "$XLB_LOCAL_SESSIONS_DIR"
+
 echo "[xiaolanbu-local] running onboard"
 
 "$OPENCLAW_BIN" onboard \\
@@ -707,7 +792,7 @@ echo "[xiaolanbu-local] running onboard"
   --mode local \\
   --auth-choice custom-api-key \\
   --custom-provider-id ${shellEscape(providerId)} \\
-  --custom-base-url ${shellEscape(baseUrl)} \\
+  --custom-base-url "$XLB_GATEWAY_BASE_URL" \\
   --custom-model-id ${shellEscape(modelId)} \\
   --custom-compatibility openai \\
   --gateway-port ${String(gatewayPort)} \\
@@ -729,6 +814,7 @@ const configPath = process.env.OPENCLAW_CONFIG_PATH;
 const agentDir = process.env.XLB_LOCAL_AGENT_DIR;
 const workspaceDir = process.env.XLB_LOCAL_WORKSPACE_DIR;
 const apiKey = process.env.OPENCLAW_API_KEY;
+const providerId = ${JSON.stringify(providerId)};
 if (!configPath || !workspaceDir) {
   process.exit(0);
 }
@@ -736,34 +822,63 @@ const raw = fs.readFileSync(configPath, "utf8");
 const config = JSON.parse(raw);
 config.models ||= {};
 config.models.providers ||= {};
-config.models.providers.openai ||= {};
-config.models.providers.openai.api = "openai-completions";
-config.models.providers.openai.apiKey = apiKey;
-config.models.providers.openai.baseUrl ||= ${shellEscape(baseUrl)};
-config.models.providers.openai.models ||= [];
-if (config.models.providers.openai.models.length === 0) {
-  config.models.providers.openai.models.push({ id: ${shellEscape(modelId)} });
-}
-for (const model of config.models.providers.openai.models) {
-  if (model && typeof model === "object") {
-    model.contextWindow = Math.max(Number(model.contextWindow || 0), 262144);
-    model.maxTokens = Math.max(Number(model.maxTokens || 0), 8192);
-    model.reasoning = false;
-    model.compat ||= {};
-    model.compat.supportsUsageInStreaming = false;
-    model.compat.supportsStrictMode = false;
-    model.compat.thinkingFormat = "qwen";
+const ensureProviderConfig = (id) => {
+  config.models.providers[id] ||= {};
+  config.models.providers[id].api = "openai-completions";
+  config.models.providers[id].apiKey = apiKey;
+  config.models.providers[id].baseUrl =
+    process.env.XLB_GATEWAY_BASE_URL || ${JSON.stringify(effectiveBaseUrl)};
+  config.models.providers[id].models ||= [];
+  if (config.models.providers[id].models.length === 0) {
+    config.models.providers[id].models.push({ id: ${JSON.stringify(modelId)} });
   }
+  for (const model of config.models.providers[id].models) {
+    if (model && typeof model === "object") {
+      model.contextWindow = Math.max(Number(model.contextWindow || 0), 262144);
+      model.maxTokens = Math.max(Number(model.maxTokens || 0), 8192);
+      model.reasoning = false;
+      model.compat ||= {};
+      model.compat.supportsUsageInStreaming = false;
+      model.compat.supportsStrictMode = false;
+      model.compat.thinkingFormat = "qwen";
+    }
+  }
+};
+ensureProviderConfig(providerId);
+if (providerId !== "openai") {
+  ensureProviderConfig("openai");
 }
 config.agents ||= {};
 config.agents.defaults ||= {};
 config.agents.defaults.workspace = workspaceDir;
+config.agents.defaults.skipBootstrap = true;
+config.agents.defaults.bootstrapMaxChars = 256;
+config.agents.defaults.bootstrapTotalMaxChars = 512;
+config.agents.list = [
+  {
+    id: "main",
+    default: true,
+    workspace: workspaceDir,
+    skills: [],
+  },
+];
 config.auth ||= {};
 config.auth.profiles ||= {};
-config.auth.profiles["openai:default"] = {
-  provider: "openai",
+config.auth.profiles[\`\${providerId}:default\`] = {
+  provider: providerId,
   mode: "api_key",
 };
+if (providerId !== "openai") {
+  config.auth.profiles["openai:default"] = {
+    provider: "openai",
+    mode: "api_key",
+  };
+}
+config.skills ||= {};
+config.skills.allowBundled = ["__xlb_none__"];
+config.skills.limits ||= {};
+config.skills.limits.maxSkillsInPrompt = 0;
+config.skills.limits.maxSkillsPromptChars = 0;
 config.tools = {
   profile: "minimal",
   deny: ["session_status"],
@@ -782,12 +897,20 @@ if (agentDir && apiKey) {
   store.profiles ||= {};
   store.lastGood ||= {};
   store.usageStats ||= {};
-  store.profiles["openai:default"] = {
+  store.profiles[\`\${providerId}:default\`] = {
     type: "api_key",
-    provider: "openai",
+    provider: providerId,
     key: apiKey,
   };
-  store.lastGood.openai = "openai:default";
+  store.lastGood[providerId] = \`\${providerId}:default\`;
+  if (providerId !== "openai") {
+    store.profiles["openai:default"] = {
+      type: "api_key",
+      provider: "openai",
+      key: apiKey,
+    };
+    store.lastGood.openai = "openai:default";
+  }
   fs.mkdirSync(agentDir, { recursive: true });
   fs.writeFileSync(authStorePath, JSON.stringify(store, null, 2) + "\\n");
 }
