@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 
 export interface LiteLlmVirtualKeyResult {
   key: string;
@@ -46,6 +46,8 @@ export interface LiteLlmSpendLogRecord {
 
 @Injectable()
 export class LiteLlmProxyService {
+  private readonly logger = new Logger(LiteLlmProxyService.name);
+
   async proxyOpenAiRequest(input: {
     path: string;
     method: string;
@@ -61,6 +63,9 @@ export class LiteLlmProxyService {
     }
 
     const targetUrl = `${baseUrl}/${input.path.replace(/^\/+/, "")}`;
+    this.logger.log(
+      `forwarding ${input.method} ${input.path.replace(/^\/+/, "")} -> ${targetUrl}`,
+    );
     const headers = new Headers();
 
     for (const [key, value] of Object.entries(input.headers ?? {})) {
@@ -103,6 +108,9 @@ export class LiteLlmProxyService {
       body,
       duplex: body ? "half" : undefined,
     } as RequestInit);
+    this.logger.log(
+      `upstream responded ${input.method} ${input.path.replace(/^\/+/, "")} status=${response.status}`,
+    );
 
     return {
       status: response.status,

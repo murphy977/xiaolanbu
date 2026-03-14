@@ -1,9 +1,11 @@
-import { All, Controller, Req, Res } from "@nestjs/common";
+import { All, Controller, Logger, Req, Res } from "@nestjs/common";
 
 import { LiteLlmProxyService } from "./services/litellm-proxy.service";
 
 @Controller()
 export class LiteLlmCompatController {
+  private readonly logger = new Logger(LiteLlmCompatController.name);
+
   constructor(private readonly liteLlmProxyService: LiteLlmProxyService) {}
 
   @All("models")
@@ -17,12 +19,18 @@ export class LiteLlmCompatController {
   }
 
   private async forward(req: any, res: any, path: string) {
+    this.logger.log(
+      `proxy start path=${path} method=${req.method} contentLength=${req.headers?.["content-length"] ?? "unknown"}`,
+    );
     const upstream = await this.liteLlmProxyService.proxyOpenAiRequest({
       path,
       method: req.method,
       headers: req.headers as Record<string, string | string[] | undefined>,
       body: req.body,
     });
+    this.logger.log(
+      `proxy response path=${path} status=${upstream.status} hasBody=${Boolean(upstream.body)}`,
+    );
 
     for (const [key, value] of Object.entries(upstream.headers)) {
       if (
