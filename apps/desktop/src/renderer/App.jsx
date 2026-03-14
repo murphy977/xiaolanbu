@@ -350,6 +350,7 @@ function buildLocalBootstrapFromDeployment(deployment) {
     browserControlUrl: access.browserControlUrl ?? "http://127.0.0.1:18791/",
     tokenSource: access.tokenSource ?? "desktop-local-bootstrap (gateway.auth.token)",
     logPath: metadata.logPath ?? "~/Library/Logs/Xiaolanbu/local-bootstrap.log",
+    runtimePackages: Array.isArray(metadata.runtimePackages) ? metadata.runtimePackages : [],
   };
 }
 

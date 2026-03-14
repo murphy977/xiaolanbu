@@ -4,6 +4,7 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 
 import { AliyunEcsService } from "../infrastructure/services/aliyun-ecs.service";
 import { LiteLlmProxyService } from "../infrastructure/services/litellm-proxy.service";
+import { RuntimeService } from "../runtime/runtime.service";
 import { StoreService } from "../store/store.service";
 import { CreateDeploymentDto } from "./dto/create-deployment.dto";
 
@@ -13,6 +14,7 @@ export class DeploymentsService {
     private readonly storeService: StoreService,
     private readonly aliyunEcsService: AliyunEcsService,
     private readonly liteLlmProxyService: LiteLlmProxyService,
+    private readonly runtimeService: RuntimeService,
   ) {}
 
   listDeployments(workspaceId?: string) {
@@ -386,6 +388,7 @@ export class DeploymentsService {
     const browserControlUrl = `http://127.0.0.1:${browserControlPort}/`;
     const tokenSource = "desktop-local-bootstrap (gateway.auth.token)";
     const logPath = "~/Library/Logs/Xiaolanbu/local-bootstrap.log";
+    const runtimePackages = this.runtimeService.getBootstrapPackagesForPlatform("darwin");
 
     const deployment = await this.storeService.createDeployment({
       id: deploymentId,
@@ -420,6 +423,7 @@ export class DeploymentsService {
         browserControlPort,
         gatewayToken,
         logPath,
+        runtimePackages,
         gatewayTokenId: gatewayProvision.tokenId,
         gatewayKeyName: gatewayProvision.keyName,
         gatewayKeyAlias: gatewayProvision.keyAlias,
@@ -444,6 +448,7 @@ export class DeploymentsService {
         browserControlUrl,
         tokenSource,
         logPath,
+        runtimePackages,
       },
     };
   }

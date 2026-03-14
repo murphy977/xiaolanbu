@@ -31,6 +31,7 @@ services:
       ALIYUN_ECS_READ_TIMEOUT_MS: 60000
       LITELLM_PROXY_URL: ${LITELLM_PROXY_URL}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      XLB_API_PUBLIC_BASE_URL: ${XLB_API_PUBLIC_BASE_URL}
       XLB_GATEWAY_PUBLIC_BASE_URL: ${XLB_GATEWAY_PUBLIC_BASE_URL}
       XLB_GATEWAY_PROVIDER_ID: ${XLB_GATEWAY_PROVIDER_ID}
       XLB_GATEWAY_MODEL: ${XLB_GATEWAY_MODEL}
@@ -38,9 +39,12 @@ services:
       XLB_BILLING_MARKUP_MULTIPLIER: ${XLB_BILLING_MARKUP_MULTIPLIER}
       XLB_BILLING_SYNC_INTERVAL_MS: ${XLB_BILLING_SYNC_INTERVAL_MS:-60000}
       XLB_BILLING_SYNC_LIMIT: ${XLB_BILLING_SYNC_LIMIT:-200}
+      XLB_RUNTIME_DIST_DIR: /runtime-dist
     depends_on:
       - postgres
       - litellm
+    volumes:
+      - ../../runtime-dist:/runtime-dist:ro
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest

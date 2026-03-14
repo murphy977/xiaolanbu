@@ -215,7 +215,18 @@ function createLocalBootstrapScript(payload) {
     gatewayBind,
     gatewayToken,
     browserControlPort,
+    runtimePackages = [],
   } = payload;
+
+  const runtimePackagesByArch = new Map(
+    Array.isArray(runtimePackages)
+      ? runtimePackages
+          .filter((item) => item && typeof item === "object" && typeof item.arch === "string")
+          .map((item) => [item.arch, item])
+      : [],
+  );
+  const runtimeArm64 = runtimePackagesByArch.get("arm64") ?? null;
+  const runtimeX64 = runtimePackagesByArch.get("x64") ?? null;
 
   ensureDirectory(LOCAL_LOG_DIR);
 
@@ -238,6 +249,10 @@ export XLB_MANAGED_BIN_DIR=${shellEscape(LOCAL_MANAGED_WRAPPER_BIN_DIR)}
 export XLB_MANAGED_OPENCLAW_BIN=${shellEscape(LOCAL_MANAGED_CLAW_BIN)}
 export XLB_MANAGED_NODE_BIN=${shellEscape(LOCAL_MANAGED_NODE_BIN)}
 export XLB_MANAGED_NPM_BIN=${shellEscape(LOCAL_MANAGED_NPM_BIN)}
+export XLB_RUNTIME_ARM64_URL=${shellEscape(runtimeArm64?.downloadUrl ?? "")}
+export XLB_RUNTIME_ARM64_SHA256=${shellEscape(runtimeArm64?.sha256 ?? "")}
+export XLB_RUNTIME_X64_URL=${shellEscape(runtimeX64?.downloadUrl ?? "")}
+export XLB_RUNTIME_X64_SHA256=${shellEscape(runtimeX64?.sha256 ?? "")}
 
 echo "[xiaolanbu-local] bootstrap started at $(date -Is)"
 
@@ -264,6 +279,25 @@ probe_url() {
     return
   fi
   wget -q --spider --timeout=6 "$url" >/dev/null 2>&1
+}
+
+verify_sha256() {
+  local expected="$1"
+  local target_file="$2"
+  [[ -n "$expected" ]] || return 0
+  if command -v shasum >/dev/null 2>&1; then
+    local actual
+    actual="$(shasum -a 256 "$target_file" | awk '{print $1}')"
+    [[ "$actual" == "$expected" ]]
+    return
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    local actual
+    actual="$(sha256sum "$target_file" | awk '{print $1}')"
+    [[ "$actual" == "$expected" ]]
+    return
+  fi
+  return 0
 }
 
 version_gte() {
@@ -333,6 +367,58 @@ detect_mainland_network() {
   fi
 
   return 1
+}
+
+select_runtime_bundle() {
+  case "$(uname -m)" in
+    arm64|aarch64)
+      echo "$XLB_RUNTIME_ARM64_URL|$XLB_RUNTIME_ARM64_SHA256"
+      ;;
+    x86_64|amd64)
+      echo "$XLB_RUNTIME_X64_URL|$XLB_RUNTIME_X64_SHA256"
+      ;;
+    *)
+      echo "|"
+      ;;
+  esac
+}
+
+install_runtime_bundle() {
+  local bundle_info
+  bundle_info="$(select_runtime_bundle)"
+  local bundle_url="\${bundle_info%%|*}"
+  local bundle_sha256="\${bundle_info#*|}"
+
+  if [[ -z "$bundle_url" ]]; then
+    return 1
+  fi
+
+  local tmp_dir archive_path extracted_root
+  tmp_dir="$(mktemp -d)"
+  archive_path="$tmp_dir/runtime.tar.gz"
+  extracted_root="$tmp_dir/openclaw-runtime"
+
+  log "downloading Xiaolanbu runtime bundle"
+  download_file "$bundle_url" "$archive_path"
+  if ! verify_sha256 "$bundle_sha256" "$archive_path"; then
+    log "runtime bundle checksum mismatch"
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  tar -xzf "$archive_path" -C "$tmp_dir"
+  if [[ ! -x "$extracted_root/bin/openclaw" ]]; then
+    log "runtime bundle is missing bin/openclaw"
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  rm -rf "$XLB_OPENCLAW_ROOT"
+  mkdir -p "$(dirname "$XLB_OPENCLAW_ROOT")"
+  mv "$extracted_root" "$XLB_OPENCLAW_ROOT"
+  rm -rf "$tmp_dir"
+  log "installed Xiaolanbu runtime bundle into $XLB_OPENCLAW_ROOT"
+  return 0
 }
 
 install_managed_node() {
@@ -421,12 +507,12 @@ install_openclaw_with_managed_npm() {
 }
 
 resolve_openclaw_bin() {
-  if command -v openclaw >/dev/null 2>&1; then
-    command -v openclaw
-    return 0
-  fi
   if [[ -x "$XLB_MANAGED_OPENCLAW_BIN" ]]; then
     echo "$XLB_MANAGED_OPENCLAW_BIN"
+    return 0
+  fi
+  if command -v openclaw >/dev/null 2>&1; then
+    command -v openclaw
     return 0
   fi
   return 1
@@ -439,6 +525,16 @@ run_official_installer() {
 
 install_openclaw_runtime() {
   local existing_bin=""
+
+  if install_runtime_bundle; then
+    existing_bin="$(resolve_openclaw_bin || true)"
+    if [[ -n "$existing_bin" ]]; then
+      log "using packaged Xiaolanbu runtime"
+      return 0
+    fi
+    log "runtime bundle installed but openclaw is still unavailable, falling back"
+  fi
+
   existing_bin="$(resolve_openclaw_bin || true)"
   if [[ -n "$existing_bin" ]]; then
     log "using existing OpenClaw at $existing_bin"

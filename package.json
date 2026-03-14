@@ -11,6 +11,7 @@
     "api:build": "npm --prefix apps/api run build",
     "api:start": "npm --prefix apps/api run start",
     "desktop:start": "npm --prefix apps/desktop start",
-    "desktop:preview": "npm --prefix apps/desktop run preview"
+    "desktop:preview": "npm --prefix apps/desktop run preview",
+    "runtime:build:mac": "bash scripts/build-openclaw-macos-runtime.sh"
   }
 }
