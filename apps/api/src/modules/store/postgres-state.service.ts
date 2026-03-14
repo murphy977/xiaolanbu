@@ -18,6 +18,7 @@ export class PostgresStateService implements OnModuleDestroy {
   private readonly logger = new Logger(PostgresStateService.name);
   private pool: Pool | null = null;
   private initialized = false;
+  private ensuredTables = new Set<string>();
 
   async onModuleDestroy() {
     if (this.pool) {
@@ -173,6 +174,18 @@ export class PostgresStateService implements OnModuleDestroy {
   }
 
   async listSessions() {
+    await this.ensureTableExists(
+      "xlb_sessions",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_sessions (
+          id TEXT PRIMARY KEY,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
     return this.queryRows<SessionRecord>("SELECT data FROM xlb_sessions ORDER BY updated_at DESC");
   }
 
@@ -224,6 +237,16 @@ export class PostgresStateService implements OnModuleDestroy {
   }
 
   async getCurrentUser() {
+    await this.ensureTableExists(
+      "xlb_app_state",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_app_state (
+          key TEXT PRIMARY KEY,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
     return this.querySingle<UserRecord>(
       "SELECT data FROM xlb_app_state WHERE key = 'current_user' LIMIT 1",
     );
@@ -233,6 +256,17 @@ export class PostgresStateService implements OnModuleDestroy {
     if (!this.pool) {
       return;
     }
+
+    await this.ensureTableExists(
+      "xlb_app_state",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_app_state (
+          key TEXT PRIMARY KEY,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
 
     await this.pool.query(
       `
@@ -291,6 +325,19 @@ export class PostgresStateService implements OnModuleDestroy {
       return;
     }
 
+    await this.ensureTableExists(
+      "xlb_sessions",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_sessions (
+          id TEXT PRIMARY KEY,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+
     await this.pool.query(
       `
         INSERT INTO xlb_sessions (id, token, user_id, updated_at, data)
@@ -307,7 +354,29 @@ export class PostgresStateService implements OnModuleDestroy {
       return;
     }
 
+    await this.ensureTableExists(
+      "xlb_sessions",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_sessions (
+          id TEXT PRIMARY KEY,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+
     await this.pool.query(`DELETE FROM xlb_sessions WHERE token = $1`, [token]);
+  }
+
+  private async ensureTableExists(tableName: string, createSql: string) {
+    if (!this.pool || this.ensuredTables.has(tableName)) {
+      return;
+    }
+
+    await this.pool.query(createSql);
+    this.ensuredTables.add(tableName);
   }
 
   private async queryRows<T>(sql: string) {
