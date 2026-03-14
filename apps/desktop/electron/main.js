@@ -311,6 +311,7 @@ function createLocalBootstrapScript(payload) {
     .replace(/[^a-z0-9_-]+/g, "-")
     .slice(-24)}`;
   const localWorkspaceDir = path.join(LOCAL_OPENCLAW_WORKSPACE_ROOT, localProfile);
+  const localProfileDir = path.join(os.homedir(), `.openclaw-${localProfile}`);
 
   const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-local-"));
   const launcherPath = path.join(launcherDir, "bootstrap-local-openclaw.sh");
@@ -328,6 +329,7 @@ export OPENCLAW_STATE_DIR=${shellEscape(LOCAL_OPENCLAW_STATE_DIR)}
 export OPENCLAW_CONFIG_PATH=${shellEscape(LOCAL_OPENCLAW_CONFIG_PATH)}
 export XLB_LOCAL_AGENT_DIR=${shellEscape(LOCAL_OPENCLAW_AGENT_DIR)}
 export XLB_LOCAL_WORKSPACE_DIR=${shellEscape(localWorkspaceDir)}
+export XLB_LOCAL_PROFILE_DIR=${shellEscape(localProfileDir)}
 export XLB_OPENCLAW_ROOT=${shellEscape(LOCAL_MANAGED_RUNTIME_ROOT)}
 export XLB_NODE_ROOT=${shellEscape(LOCAL_MANAGED_NODE_ROOT)}
 export XLB_NODE_VERSION=${shellEscape(LOCAL_MANAGED_NODE_VERSION)}
@@ -348,6 +350,17 @@ iso_now() {
 echo "[xiaolanbu-local] bootstrap started at $(iso_now)"
 
 mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR" "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_WORKSPACE_DIR" "$XLB_LOCAL_AGENT_DIR"
+
+if [[ -e "$XLB_LOCAL_PROFILE_DIR" && ! -L "$XLB_LOCAL_PROFILE_DIR" ]]; then
+  profile_backup="$XLB_LOCAL_PROFILE_DIR.backup.$(date +%s)"
+  mv "$XLB_LOCAL_PROFILE_DIR" "$profile_backup"
+  echo "[xiaolanbu-local] moved existing profile dir to $profile_backup"
+fi
+if [[ -L "$XLB_LOCAL_PROFILE_DIR" ]]; then
+  rm -f "$XLB_LOCAL_PROFILE_DIR"
+fi
+ln -sfn "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_PROFILE_DIR"
+echo "[xiaolanbu-local] linked profile dir $XLB_LOCAL_PROFILE_DIR -> $OPENCLAW_STATE_DIR"
 
 log() {
   echo "[xiaolanbu-local] $*"
@@ -705,6 +718,11 @@ if (!configPath || !workspaceDir) {
 }
 const raw = fs.readFileSync(configPath, "utf8");
 const config = JSON.parse(raw);
+config.models ||= {};
+config.models.providers ||= {};
+config.models.providers.openai ||= {};
+config.models.providers.openai.api = "openai-completions";
+config.models.providers.openai.apiKey = apiKey;
 config.agents ||= {};
 config.agents.defaults ||= {};
 config.agents.defaults.workspace = workspaceDir;
