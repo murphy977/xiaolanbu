@@ -1,4 +1,7 @@
+import * as http from "node:http";
+import * as https from "node:https";
 import { Readable } from "node:stream";
+import { URL } from "node:url";
 
 import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
 
@@ -66,7 +69,7 @@ export class LiteLlmProxyService {
     this.logger.log(
       `forwarding ${input.method} ${input.path.replace(/^\/+/, "")} -> ${targetUrl}`,
     );
-    const headers = new Headers();
+    const headers: Record<string, string> = {};
 
     for (const [key, value] of Object.entries(input.headers ?? {})) {
       if (value === undefined) {
@@ -83,41 +86,80 @@ export class LiteLlmProxyService {
       }
 
       if (Array.isArray(value)) {
-        for (const item of value) {
-          headers.append(key, item);
-        }
+        headers[key] = value.join(", ");
       } else {
-        headers.set(key, value);
+        headers[key] = value;
       }
     }
 
-    let body: BodyInit | undefined;
+    let body: string | undefined;
     const normalizedPath = input.path.replace(/^\/+/, "");
     const requestedJsonBody =
       input.body !== undefined && input.method !== "GET" && input.method !== "HEAD"
         ? this.sanitizeOpenAiPayload(input.path, input.body)
         : undefined;
     if (input.body !== undefined && input.method !== "GET" && input.method !== "HEAD") {
-      headers.set("Content-Type", "application/json");
+      headers["Content-Type"] = "application/json";
       body = JSON.stringify(requestedJsonBody);
+      headers["Content-Length"] = String(Buffer.byteLength(body));
     }
 
-    const response = await fetch(targetUrl, {
-      method: input.method,
-      headers,
-      body,
-      duplex: body ? "half" : undefined,
-    } as RequestInit);
-    this.logger.log(
-      `upstream responded ${input.method} ${input.path.replace(/^\/+/, "")} status=${response.status}`,
-    );
+    return await new Promise<{
+      status: number;
+      headers: Record<string, string>;
+      body: Readable | null;
+      text: string | null;
+    }>((resolve, reject) => {
+      const url = new URL(targetUrl);
+      const client = url.protocol === "https:" ? https : http;
+      const request = client.request(
+        {
+          protocol: url.protocol,
+          hostname: url.hostname,
+          port: url.port ? Number(url.port) : undefined,
+          path: `${url.pathname}${url.search}`,
+          method: input.method,
+          headers,
+        },
+        (response) => {
+          this.logger.log(
+            `upstream responded ${input.method} ${normalizedPath} status=${response.statusCode ?? 502}`,
+          );
+          resolve({
+            status: response.statusCode ?? 502,
+            headers: Object.fromEntries(
+              Object.entries(response.headers).flatMap(([key, value]) => {
+                if (value === undefined) {
+                  return [];
+                }
 
-    return {
-      status: response.status,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: response.body ? Readable.fromWeb(response.body as never) : null,
-      text: response.body ? null : await response.text(),
-    };
+                return [[key, Array.isArray(value) ? value.join(", ") : String(value)]];
+              }),
+            ),
+            body: response,
+            text: null,
+          });
+        },
+      );
+
+      request.on("error", (error) => {
+        this.logger.error(
+          `proxy request failed path=${normalizedPath}: ${error instanceof Error ? error.message : String(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        reject(error);
+      });
+
+      request.setTimeout(60_000, () => {
+        request.destroy(new Error(`Proxy request timed out for ${normalizedPath}`));
+      });
+
+      if (body) {
+        request.write(body);
+      }
+
+      request.end();
+    });
   }
 
   async generateVirtualKey(input: {
