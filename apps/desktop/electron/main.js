@@ -5,10 +5,49 @@ const os = require("os");
 const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 
+const LOCAL_APP_SUPPORT_DIR = path.join(
+  os.homedir(),
+  "Library",
+  "Application Support",
+  "Xiaolanbu",
+);
 const LOCAL_LOG_DIR = path.join(os.homedir(), "Library", "Logs", "Xiaolanbu");
 const LOCAL_BOOTSTRAP_LOG = path.join(LOCAL_LOG_DIR, "local-bootstrap.log");
 const LOCAL_DEFAULT_DASHBOARD_PORT = 18789;
 const LOCAL_DEFAULT_BROWSER_CONTROL_PORT = 18791;
+const LOCAL_MANAGED_RUNTIME_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "runtime", "openclaw");
+const LOCAL_MANAGED_NODE_ROOT = path.join(LOCAL_MANAGED_RUNTIME_ROOT, "node");
+const LOCAL_MANAGED_NODE_CURRENT = path.join(LOCAL_MANAGED_NODE_ROOT, "current");
+const LOCAL_MANAGED_NPM_PREFIX = path.join(LOCAL_MANAGED_RUNTIME_ROOT, "npm-global");
+const LOCAL_MANAGED_WRAPPER_BIN_DIR = path.join(LOCAL_MANAGED_RUNTIME_ROOT, "bin");
+const LOCAL_MANAGED_CLAW_BIN = path.join(LOCAL_MANAGED_WRAPPER_BIN_DIR, "openclaw");
+const LOCAL_MANAGED_NODE_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "node");
+const LOCAL_MANAGED_NPM_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "npm");
+const LOCAL_MANAGED_NODE_VERSION = "22.22.1";
+
+function getLocalManagedPathEntries() {
+  return [
+    LOCAL_MANAGED_WRAPPER_BIN_DIR,
+    path.join(LOCAL_MANAGED_NPM_PREFIX, "bin"),
+    path.join(LOCAL_MANAGED_NODE_CURRENT, "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ];
+}
+
+function buildLocalRuntimePath() {
+  return [...getLocalManagedPathEntries(), process.env.PATH ?? ""]
+    .filter(Boolean)
+    .join(":");
+}
+
+function getShellScriptRuntimePathExpression() {
+  return [...getLocalManagedPathEntries(), "$PATH"].filter(Boolean).join(":");
+}
 
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
@@ -119,7 +158,7 @@ async function detectLocalOpenClawRuntime() {
     const result = await runSpawnCapture("/bin/bash", [
       "-lc",
       [
-        "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH",
+        `export PATH=${shellEscape(buildLocalRuntimePath())}`,
         "if ! command -v openclaw >/dev/null 2>&1; then exit 9; fi",
         'binary_path="$(command -v openclaw)"',
         'version="$($binary_path --version 2>/dev/null | head -n 1 || true)"',
@@ -186,28 +225,258 @@ function createLocalBootstrapScript(payload) {
 set -euo pipefail
 exec > >(tee -a ${shellEscape(LOCAL_BOOTSTRAP_LOG)}) 2>&1
 
-export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH
+export PATH="${getShellScriptRuntimePathExpression()}"
 export HOME=${shellEscape(os.homedir())}
 export USER=${shellEscape(os.userInfo().username)}
 export LOGNAME=${shellEscape(os.userInfo().username)}
 export OPENCLAW_API_KEY=${shellEscape(apiKey)}
+export XLB_OPENCLAW_ROOT=${shellEscape(LOCAL_MANAGED_RUNTIME_ROOT)}
+export XLB_NODE_ROOT=${shellEscape(LOCAL_MANAGED_NODE_ROOT)}
+export XLB_NODE_VERSION=${shellEscape(LOCAL_MANAGED_NODE_VERSION)}
+export XLB_NPM_PREFIX=${shellEscape(LOCAL_MANAGED_NPM_PREFIX)}
+export XLB_MANAGED_BIN_DIR=${shellEscape(LOCAL_MANAGED_WRAPPER_BIN_DIR)}
+export XLB_MANAGED_OPENCLAW_BIN=${shellEscape(LOCAL_MANAGED_CLAW_BIN)}
+export XLB_MANAGED_NODE_BIN=${shellEscape(LOCAL_MANAGED_NODE_BIN)}
+export XLB_MANAGED_NPM_BIN=${shellEscape(LOCAL_MANAGED_NPM_BIN)}
 
 echo "[xiaolanbu-local] bootstrap started at $(date -Is)"
 
-if ! command -v openclaw >/dev/null 2>&1; then
-  echo "[xiaolanbu-local] openclaw not found, installing runtime"
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard
-fi
+mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR"
 
-if ! command -v openclaw >/dev/null 2>&1; then
+log() {
+  echo "[xiaolanbu-local] $*"
+}
+
+download_file() {
+  local url="$1"
+  local output="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 --retry-connrefused -o "$output" "$url"
+    return
+  fi
+  wget -q --https-only --secure-protocol=TLSv1_2 --tries=3 --timeout=20 -O "$output" "$url"
+}
+
+probe_url() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -IfsSL --proto '=https' --tlsv1.2 --max-time 6 "$url" >/dev/null 2>&1
+    return
+  fi
+  wget -q --spider --timeout=6 "$url" >/dev/null 2>&1
+}
+
+version_gte() {
+  local current="$1"
+  local minimum="$2"
+  local current_major=0 current_minor=0 current_patch=0
+  local minimum_major=0 minimum_minor=0 minimum_patch=0
+
+  current="\${current#v}"
+  minimum="\${minimum#v}"
+  IFS=. read -r current_major current_minor current_patch <<<"$current"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<<"$minimum"
+
+  current_major="\${current_major:-0}"
+  current_minor="\${current_minor:-0}"
+  current_patch="\${current_patch:-0}"
+  minimum_major="\${minimum_major:-0}"
+  minimum_minor="\${minimum_minor:-0}"
+  minimum_patch="\${minimum_patch:-0}"
+
+  if (( current_major > minimum_major )); then
+    return 0
+  fi
+  if (( current_major < minimum_major )); then
+    return 1
+  fi
+  if (( current_minor > minimum_minor )); then
+    return 0
+  fi
+  if (( current_minor < minimum_minor )); then
+    return 1
+  fi
+  if (( current_patch >= minimum_patch )); then
+    return 0
+  fi
+  return 1
+}
+
+node_satisfies_minimum() {
+  local node_bin="$1"
+  if [[ ! -x "$node_bin" ]]; then
+    return 1
+  fi
+  local current_version
+  current_version="$("$node_bin" -p "process.versions.node" 2>/dev/null || true)"
+  [[ -n "$current_version" ]] || return 1
+  version_gte "$current_version" "22.16.0"
+}
+
+detect_mainland_network() {
+  if [[ "\${XLB_FORCE_MAINLAND_NETWORK:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  local github_ok=0
+  local raw_ok=0
+  local npmmirror_ok=0
+  local baidu_ok=0
+
+  probe_url "https://github.com" && github_ok=1 || true
+  probe_url "https://raw.githubusercontent.com" && raw_ok=1 || true
+  probe_url "https://registry.npmmirror.com/openclaw" && npmmirror_ok=1 || true
+  probe_url "https://www.baidu.com" && baidu_ok=1 || true
+
+  if [[ $npmmirror_ok -eq 1 && $baidu_ok -eq 1 && ( $github_ok -eq 0 || $raw_ok -eq 0 ) ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+install_managed_node() {
+  local version_tag="v$XLB_NODE_VERSION"
+  local arch
+  case "$(uname -m)" in
+    arm64|aarch64) arch="arm64" ;;
+    x86_64|amd64) arch="x64" ;;
+    *)
+      log "unsupported macOS architecture: $(uname -m)"
+      exit 1
+      ;;
+  esac
+
+  local node_archive="node-$version_tag-darwin-$arch.tar.gz"
+  local base_url
+  if detect_mainland_network; then
+    base_url="https://registry.npmmirror.com/-/binary/node"
+    log "detected mainland-friendly network mode"
+  else
+    base_url="https://nodejs.org/dist"
+    log "detected global network mode"
+  fi
+
+  local target_dir="$XLB_NODE_ROOT/versions/$version_tag"
+  local tmp_archive
+  tmp_archive="$(mktemp)"
+
+  log "installing managed Node.js $version_tag ($arch)"
+  download_file "$base_url/$version_tag/$node_archive" "$tmp_archive"
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+  tar -xzf "$tmp_archive" -C "$target_dir" --strip-components=1
+  rm -f "$tmp_archive"
+  ln -sfn "$target_dir" "$XLB_NODE_ROOT/current"
+  export PATH="$XLB_NODE_ROOT/current/bin:$PATH"
+}
+
+ensure_node_runtime() {
+  if node_satisfies_minimum "$XLB_MANAGED_NODE_BIN"; then
+    export PATH="$XLB_NODE_ROOT/current/bin:$PATH"
+    log "using cached managed Node.js $("$XLB_MANAGED_NODE_BIN" -p 'process.versions.node')"
+    return 0
+  fi
+
+  install_managed_node
+}
+
+write_managed_openclaw_wrapper() {
+  local module_entry="$XLB_NPM_PREFIX/lib/node_modules/openclaw/openclaw.mjs"
+  if [[ ! -f "$module_entry" ]]; then
+    log "managed OpenClaw entry missing at $module_entry"
+    exit 1
+  fi
+  cat > "$XLB_MANAGED_OPENCLAW_BIN" <<EOF
+#!/bin/bash
+set -euo pipefail
+export PATH="$XLB_NODE_ROOT/current/bin:$XLB_NPM_PREFIX/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+exec "$XLB_NODE_ROOT/current/bin/node" "$module_entry" "\$@"
+EOF
+  chmod +x "$XLB_MANAGED_OPENCLAW_BIN"
+}
+
+install_openclaw_with_managed_npm() {
+  ensure_node_runtime
+  export PATH="$XLB_MANAGED_BIN_DIR:$XLB_NPM_PREFIX/bin:$XLB_NODE_ROOT/current/bin:$PATH"
+  export NPM_CONFIG_PREFIX="$XLB_NPM_PREFIX"
+  export npm_config_prefix="$XLB_NPM_PREFIX"
+  export npm_config_update_notifier="false"
+  export npm_config_fund="false"
+  export npm_config_audit="false"
+  export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="1"
+
+  if detect_mainland_network; then
+    export NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
+    export npm_config_registry="$NPM_CONFIG_REGISTRY"
+    log "using npm mirror: $NPM_CONFIG_REGISTRY"
+  else
+    export NPM_CONFIG_REGISTRY="https://registry.npmjs.org"
+    export npm_config_registry="$NPM_CONFIG_REGISTRY"
+  fi
+
+  log "installing OpenClaw from npm"
+  "$XLB_MANAGED_NPM_BIN" install -g --force "openclaw@latest"
+  write_managed_openclaw_wrapper
+}
+
+resolve_openclaw_bin() {
+  if command -v openclaw >/dev/null 2>&1; then
+    command -v openclaw
+    return 0
+  fi
+  if [[ -x "$XLB_MANAGED_OPENCLAW_BIN" ]]; then
+    echo "$XLB_MANAGED_OPENCLAW_BIN"
+    return 0
+  fi
+  return 1
+}
+
+run_official_installer() {
+  log "trying official OpenClaw installer"
+  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard
+}
+
+install_openclaw_runtime() {
+  local existing_bin=""
+  existing_bin="$(resolve_openclaw_bin || true)"
+  if [[ -n "$existing_bin" ]]; then
+    log "using existing OpenClaw at $existing_bin"
+    return 0
+  fi
+
+  if detect_mainland_network; then
+    log "mainland network detected, using managed npm path"
+    install_openclaw_with_managed_npm
+    return 0
+  fi
+
+  if run_official_installer; then
+    existing_bin="$(resolve_openclaw_bin || true)"
+    if [[ -n "$existing_bin" ]]; then
+      log "official installer succeeded"
+      return 0
+    fi
+    log "official installer finished without exposing openclaw on PATH, falling back"
+  else
+    log "official installer failed, falling back to managed npm path"
+  fi
+
+  install_openclaw_with_managed_npm
+}
+
+install_openclaw_runtime
+
+OPENCLAW_BIN="$(resolve_openclaw_bin || true)"
+if [[ -z "$OPENCLAW_BIN" ]]; then
   echo "[xiaolanbu-local] openclaw installation did not expose binary on PATH"
   exit 1
 fi
 
-echo "[xiaolanbu-local] using openclaw at $(command -v openclaw)"
+echo "[xiaolanbu-local] using openclaw at $OPENCLAW_BIN"
 echo "[xiaolanbu-local] running onboard"
 
-openclaw onboard \\
+"$OPENCLAW_BIN" onboard \\
   --non-interactive \\
   --accept-risk \\
   --mode local \\
@@ -550,7 +819,7 @@ app.whenReady().then(() => {
       await runSpawnCapture("/bin/bash", [launcherPath], {
         env: {
           ...process.env,
-          PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH ?? ""}`,
+          PATH: buildLocalRuntimePath(),
         },
       });
 
