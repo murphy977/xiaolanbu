@@ -35,11 +35,7 @@ const LOCAL_MANAGED_CLAW_BIN = path.join(LOCAL_MANAGED_WRAPPER_BIN_DIR, "opencla
 const LOCAL_MANAGED_NODE_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "node");
 const LOCAL_MANAGED_NPM_BIN = path.join(LOCAL_MANAGED_NODE_CURRENT, "bin", "npm");
 const LOCAL_MANAGED_NODE_VERSION = "22.22.1";
-const LOCAL_GATEWAY_TUNNEL_KEY_PATH = path.join(
-  LOCAL_APP_SUPPORT_DIR,
-  "keys",
-  "xlb-gateway-tunnel",
-);
+const LOCAL_GATEWAY_TUNNEL_KEY_PATH = path.join(os.homedir(), ".xiaolanbu", "keys", "xlb-gateway-tunnel");
 const LOCAL_GATEWAY_TUNNEL_PORT = 43030;
 const LOCAL_GATEWAY_TUNNEL_REMOTE_PORT = 3030;
 const LOCAL_CLEAN_WORKSPACE_KEEP = new Set([
@@ -493,6 +489,7 @@ ensure_gateway_tunnel() {
       else
         printf '%s' "$XLB_GATEWAY_TUNNEL_PRIVATE_KEY_B64" | base64 -D > "$XLB_GATEWAY_TUNNEL_KEY"
       fi
+      printf '\n' >> "$XLB_GATEWAY_TUNNEL_KEY"
       log "installed bundled Xiaolanbu gateway tunnel key"
     else
       log "gateway tunnel key is missing at $XLB_GATEWAY_TUNNEL_KEY"
