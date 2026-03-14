@@ -871,6 +871,7 @@ export class DeploymentsService {
     } | null,
   ) {
     const publicApiBaseUrl =
+      process.env.XLB_API_DIRECT_PUBLIC_BASE_URL?.trim() ||
       process.env.XLB_API_PUBLIC_BASE_URL?.trim() ||
       process.env.XLB_PUBLIC_API_BASE_URL?.trim();
 
