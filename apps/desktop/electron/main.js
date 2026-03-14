@@ -13,6 +13,9 @@ const LOCAL_APP_SUPPORT_DIR = path.join(
 );
 const LOCAL_LOG_DIR = path.join(os.homedir(), "Library", "Logs", "Xiaolanbu");
 const LOCAL_BOOTSTRAP_LOG = path.join(LOCAL_LOG_DIR, "local-bootstrap.log");
+const LOCAL_OPENCLAW_STATE_DIR = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-state");
+const LOCAL_OPENCLAW_CONFIG_PATH = path.join(LOCAL_OPENCLAW_STATE_DIR, "openclaw.json");
+const LOCAL_OPENCLAW_WORKSPACE_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "openclaw-workspaces");
 const LOCAL_DEFAULT_DASHBOARD_PORT = 18789;
 const LOCAL_DEFAULT_BROWSER_CONTROL_PORT = 18791;
 const LOCAL_MANAGED_RUNTIME_ROOT = path.join(LOCAL_APP_SUPPORT_DIR, "runtime", "openclaw");
@@ -207,6 +210,7 @@ async function detectLocalOpenClawRuntime() {
 
 function createLocalBootstrapScript(payload) {
   const {
+    deploymentId = "local",
     apiKey,
     providerId,
     baseUrl,
@@ -230,6 +234,12 @@ function createLocalBootstrapScript(payload) {
 
   ensureDirectory(LOCAL_LOG_DIR);
 
+  const localProfile = `xlb-${String(deploymentId)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .slice(-24)}`;
+  const localWorkspaceDir = path.join(LOCAL_OPENCLAW_WORKSPACE_ROOT, localProfile);
+
   const launcherDir = fs.mkdtempSync(path.join(os.tmpdir(), "xiaolanbu-local-"));
   const launcherPath = path.join(launcherDir, "bootstrap-local-openclaw.sh");
   const script = `#!/bin/bash
@@ -241,6 +251,10 @@ export HOME=${shellEscape(os.homedir())}
 export USER=${shellEscape(os.userInfo().username)}
 export LOGNAME=${shellEscape(os.userInfo().username)}
 export OPENCLAW_API_KEY=${shellEscape(apiKey)}
+export OPENCLAW_PROFILE=${shellEscape(localProfile)}
+export OPENCLAW_STATE_DIR=${shellEscape(LOCAL_OPENCLAW_STATE_DIR)}
+export OPENCLAW_CONFIG_PATH=${shellEscape(LOCAL_OPENCLAW_CONFIG_PATH)}
+export XLB_LOCAL_WORKSPACE_DIR=${shellEscape(localWorkspaceDir)}
 export XLB_OPENCLAW_ROOT=${shellEscape(LOCAL_MANAGED_RUNTIME_ROOT)}
 export XLB_NODE_ROOT=${shellEscape(LOCAL_MANAGED_NODE_ROOT)}
 export XLB_NODE_VERSION=${shellEscape(LOCAL_MANAGED_NODE_VERSION)}
@@ -254,9 +268,13 @@ export XLB_RUNTIME_ARM64_SHA256=${shellEscape(runtimeArm64?.sha256 ?? "")}
 export XLB_RUNTIME_X64_URL=${shellEscape(runtimeX64?.downloadUrl ?? "")}
 export XLB_RUNTIME_X64_SHA256=${shellEscape(runtimeX64?.sha256 ?? "")}
 
-echo "[xiaolanbu-local] bootstrap started at $(date -Is)"
+iso_now() {
+  date "+%Y-%m-%dT%H:%M:%S%z"
+}
 
-mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR"
+echo "[xiaolanbu-local] bootstrap started at $(iso_now)"
+
+mkdir -p "$XLB_OPENCLAW_ROOT" "$XLB_NODE_ROOT" "$XLB_NPM_PREFIX" "$XLB_MANAGED_BIN_DIR" "$OPENCLAW_STATE_DIR" "$XLB_LOCAL_WORKSPACE_DIR"
 
 log() {
   echo "[xiaolanbu-local] $*"
@@ -266,16 +284,16 @@ download_file() {
   local url="$1"
   local output="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 --retry-connrefused -o "$output" "$url"
+    curl -fsSL --retry 3 --retry-delay 1 --retry-connrefused -o "$output" "$url"
     return
   fi
-  wget -q --https-only --secure-protocol=TLSv1_2 --tries=3 --timeout=20 -O "$output" "$url"
+  wget -q --tries=3 --timeout=20 -O "$output" "$url"
 }
 
 probe_url() {
   local url="$1"
   if command -v curl >/dev/null 2>&1; then
-    curl -IfsSL --proto '=https' --tlsv1.2 --max-time 6 "$url" >/dev/null 2>&1
+    curl -IfsSL --max-time 6 "$url" >/dev/null 2>&1
     return
   fi
   wget -q --spider --timeout=6 "$url" >/dev/null 2>&1
@@ -591,13 +609,30 @@ echo "[xiaolanbu-local] running onboard"
   --skip-skills \\
   --skip-search
 
+if [[ -x "$XLB_MANAGED_NODE_BIN" && -f "$OPENCLAW_CONFIG_PATH" ]]; then
+  "$XLB_MANAGED_NODE_BIN" <<'EOF'
+const fs = require("fs");
+const configPath = process.env.OPENCLAW_CONFIG_PATH;
+const workspaceDir = process.env.XLB_LOCAL_WORKSPACE_DIR;
+if (!configPath || !workspaceDir) {
+  process.exit(0);
+}
+const raw = fs.readFileSync(configPath, "utf8");
+const config = JSON.parse(raw);
+config.agents ||= {};
+config.agents.defaults ||= {};
+config.agents.defaults.workspace = workspaceDir;
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+EOF
+fi
+
 echo "[xiaolanbu-local] waiting for ports ${String(gatewayPort)} and ${String(browserControlPort)}"
 for _ in $(seq 1 45); do
   if lsof -n -iTCP:${String(gatewayPort)} -sTCP:LISTEN >/dev/null 2>&1 && lsof -n -iTCP:${String(
     browserControlPort,
   )} -sTCP:LISTEN >/dev/null 2>&1; then
     echo "[xiaolanbu-local] local gateway is ready"
-    echo "[xiaolanbu-local] bootstrap finished at $(date -Is)"
+    echo "[xiaolanbu-local] bootstrap finished at $(iso_now)"
     exit 0
   fi
   sleep 2
