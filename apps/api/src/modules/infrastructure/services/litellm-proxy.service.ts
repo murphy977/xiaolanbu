@@ -322,6 +322,11 @@ export class LiteLlmProxyService {
       }
     }
 
+    const model = typeof next.model === "string" ? next.model : "";
+    if (model.startsWith("qwen") && next.enable_thinking === undefined) {
+      next.enable_thinking = false;
+    }
+
     return next;
   }
 }
