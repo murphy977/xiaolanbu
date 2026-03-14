@@ -1,4 +1,9 @@
 model_list:
+  - model_name: qwen-plus
+    litellm_params:
+      model: openai/qwen-plus
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY
   - model_name: qwen35-plus
     litellm_params:
       model: openai/qwen3.5-plus

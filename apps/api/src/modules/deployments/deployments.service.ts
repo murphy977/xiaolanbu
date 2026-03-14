@@ -369,11 +369,16 @@ export class DeploymentsService {
 
   private async createLocalDeployment(body: CreateDeploymentDto) {
     const deploymentId = this.createDeploymentId();
+    const localRequestedModelId =
+      body.openclawModelId?.trim() ||
+      process.env.XLB_LOCAL_GATEWAY_MODEL?.trim() ||
+      process.env.XLB_LOCAL_MODEL?.trim() ||
+      "qwen-plus";
     const liteLlmProvision = await this.resolveGatewayProvision({
       deploymentId,
       workspaceId: body.workspaceId,
       deploymentName: body.name,
-      requestedModelId: body.openclawModelId?.trim() || process.env.XLB_GATEWAY_MODEL || "qwen35-plus",
+      requestedModelId: localRequestedModelId,
     });
     const gatewayProvision = this.resolveLocalProvision(body, deploymentId, liteLlmProvision);
 
