@@ -369,16 +369,7 @@ export class DeploymentsService {
 
   private async createLocalDeployment(body: CreateDeploymentDto) {
     const deploymentId = this.createDeploymentId();
-    const gatewayProvision = await this.resolveGatewayProvision({
-      deploymentId,
-      workspaceId: body.workspaceId,
-      deploymentName: body.name,
-      requestedModelId: body.openclawModelId,
-    });
-
-    if (!gatewayProvision) {
-      throw new BadRequestException("当前网关未就绪，暂时无法创建本地部署。");
-    }
+    const gatewayProvision = this.resolveLocalProvision(body, deploymentId);
 
     const gatewayPort = body.openclawGatewayPort ?? 18789;
     const gatewayBind = body.openclawGatewayBind ?? "loopback";
@@ -415,9 +406,9 @@ export class DeploymentsService {
       },
       metadata: {
         dryRun: body.dryRun ?? false,
-        providerId: body.openclawProviderId ?? gatewayProvision.providerId,
-        baseUrl: body.openclawBaseUrl ?? gatewayProvision.baseUrl,
-        modelId: body.openclawModelId ?? gatewayProvision.modelId,
+        providerId: gatewayProvision.providerId,
+        baseUrl: gatewayProvision.baseUrl,
+        modelId: gatewayProvision.modelId,
         gatewayPort,
         gatewayBind,
         browserControlPort,
@@ -437,9 +428,9 @@ export class DeploymentsService {
       bootstrap: {
         deploymentId,
         apiKey: gatewayProvision.apiKey,
-        providerId: body.openclawProviderId ?? gatewayProvision.providerId,
-        baseUrl: body.openclawBaseUrl ?? gatewayProvision.baseUrl,
-        modelId: body.openclawModelId ?? gatewayProvision.modelId,
+        providerId: gatewayProvision.providerId,
+        baseUrl: gatewayProvision.baseUrl,
+        modelId: gatewayProvision.modelId,
         gatewayPort,
         gatewayBind,
         browserControlPort,
@@ -854,10 +845,36 @@ export class DeploymentsService {
   private resolveInitialGatewayKeyBudget(balanceCny: number) {
     const positiveBalance = Number.isFinite(balanceCny) ? Math.max(balanceCny, 0) : 0;
     if (positiveBalance > 0) {
-      return this.roundCurrency(positiveBalance);
+    return this.roundCurrency(positiveBalance);
+  }
+
+  return this.resolveGatewayKeyBudget() ?? 0;
+  }
+
+  private resolveLocalProvision(body: CreateDeploymentDto, deploymentId: string) {
+    const apiKey = body.openclawApiKey?.trim() || process.env.DASHSCOPE_API_KEY?.trim();
+    if (!apiKey) {
+      throw new BadRequestException("本地部署缺少 DASHSCOPE_API_KEY，暂时无法完成初始化。");
     }
 
-    return this.resolveGatewayKeyBudget() ?? 0;
+    return {
+      apiKey,
+      tokenId: `local-direct:${deploymentId}`,
+      keyName: "dashscope-direct",
+      keyAlias: `local-direct:${deploymentId}`,
+      baseUrl:
+        body.openclawBaseUrl?.trim() ||
+        process.env.XLB_LOCAL_BASE_URL?.trim() ||
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      modelId:
+        body.openclawModelId?.trim() ||
+        process.env.XLB_LOCAL_MODEL?.trim() ||
+        "qwen-plus",
+      providerId:
+        body.openclawProviderId?.trim() ||
+        process.env.XLB_LOCAL_PROVIDER_ID?.trim() ||
+        "openai",
+    };
   }
 
   private roundCurrency(value: number) {
