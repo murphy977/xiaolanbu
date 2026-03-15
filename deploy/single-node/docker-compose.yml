@@ -56,6 +56,8 @@ services:
   kong:
     image: kong/kong-gateway:3.13.0.1
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
