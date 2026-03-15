@@ -43,84 +43,7 @@ export class PostgresStateService implements OnModuleDestroy {
       connectionString: databaseUrl,
     });
 
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS xlb_deployments (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_wallets (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL UNIQUE,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_usage_ledger (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        deployment_id TEXT NOT NULL,
-        request_id TEXT NOT NULL,
-        finished_at TIMESTAMPTZ NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL,
-        UNIQUE (workspace_id, deployment_id, request_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_wallet_transactions (
-        id TEXT PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_users (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_workspaces_catalog (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_workspace_members (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL,
-        UNIQUE (user_id, workspace_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_sessions (
-        id TEXT PRIMARY KEY,
-        token TEXT NOT NULL UNIQUE,
-        user_id TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS xlb_app_state (
-        key TEXT PRIMARY KEY,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        data JSONB NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS xlb_deployments_workspace_idx
-        ON xlb_deployments (workspace_id, updated_at DESC);
-      CREATE INDEX IF NOT EXISTS xlb_usage_ledger_workspace_idx
-        ON xlb_usage_ledger (workspace_id, finished_at DESC);
-      CREATE INDEX IF NOT EXISTS xlb_wallet_transactions_workspace_idx
-        ON xlb_wallet_transactions (workspace_id, created_at DESC);
-    `);
+    await this.ensureBaseSchema();
 
     this.initialized = true;
   }
@@ -377,6 +300,126 @@ export class PostgresStateService implements OnModuleDestroy {
 
     await this.pool.query(createSql);
     this.ensuredTables.add(tableName);
+  }
+
+  private async ensureBaseSchema() {
+    await this.ensureTableExists(
+      "xlb_deployments",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_deployments (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_wallets",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_wallets (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL UNIQUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_usage_ledger",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_usage_ledger (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL,
+          deployment_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          finished_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL,
+          UNIQUE (workspace_id, deployment_id, request_id)
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_wallet_transactions",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_wallet_transactions (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_users",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_workspaces_catalog",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_workspaces_catalog (
+          id TEXT PRIMARY KEY,
+          owner_user_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_workspace_members",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_workspace_members (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL,
+          UNIQUE (user_id, workspace_id)
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_sessions",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_sessions (
+          id TEXT PRIMARY KEY,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+    await this.ensureTableExists(
+      "xlb_app_state",
+      `
+        CREATE TABLE IF NOT EXISTS xlb_app_state (
+          key TEXT PRIMARY KEY,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          data JSONB NOT NULL
+        )
+      `,
+    );
+
+    if (this.pool) {
+      await this.pool.query(`
+        CREATE INDEX IF NOT EXISTS xlb_deployments_workspace_idx
+          ON xlb_deployments (workspace_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS xlb_usage_ledger_workspace_idx
+          ON xlb_usage_ledger (workspace_id, finished_at DESC);
+        CREATE INDEX IF NOT EXISTS xlb_wallet_transactions_workspace_idx
+          ON xlb_wallet_transactions (workspace_id, created_at DESC);
+      `);
+    }
   }
 
   private async queryRows<T>(sql: string) {
