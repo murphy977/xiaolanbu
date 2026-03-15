@@ -12,6 +12,7 @@ This directory contains the fastest MVP deployment layout for one Alibaba Cloud 
 ## Services
 
 - `api`: Xiaolanbu NestJS backend on internal port `3030`
+- `kong`: dedicated LLM ingress on internal port `8000`
 - `litellm`: centralized LLM gateway on internal port `4000`
 - `postgres`: backing store for LiteLLM
 - `caddy`: reverse proxy on port `80`
@@ -19,7 +20,8 @@ This directory contains the fastest MVP deployment layout for one Alibaba Cloud 
 Routing:
 
 - `http://47.86.38.197/api/*` -> `api:3030`
-- `http://47.86.38.197/v1/*` -> `litellm:4000`
+- `http://47.86.38.197/v1/*` -> `kong:8000` -> `litellm:4000`
+- `http://47.86.38.197/key/*` -> `kong:8000` -> `litellm:4000`
 
 Once you have your domain, replace the IP-based Caddy config with real hostnames:
 
@@ -85,6 +87,13 @@ curl http://47.86.38.197/v1/models \
   -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
 ```
 
+Kong path health:
+
+```bash
+curl http://47.86.38.197/key/info \
+  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}"
+```
+
 ## Next step
 
 After this is up, change the OpenClaw instance init flow to use:
@@ -93,3 +102,12 @@ After this is up, change the OpenClaw instance init flow to use:
 - `api_key = your Xiaolanbu virtual key`
 
 Do not write the real DashScope key into user instances.
+
+## Restricted tunnel account
+
+If you use the restricted `xlb-tunnel` account for local deployments, update its
+`authorized_keys` rule to allow forwarding to Kong instead of the Nest API:
+
+```text
+permitopen="127.0.0.1:8000"
+```

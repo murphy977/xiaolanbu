@@ -879,18 +879,20 @@ export class DeploymentsService {
       providerId: string;
     } | null,
   ) {
-    const publicApiBaseUrl =
+    const publicGatewayBaseUrl =
+      process.env.XLB_GATEWAY_PUBLIC_BASE_URL?.trim() ||
+      process.env.LITELLM_PUBLIC_BASE_URL?.trim() ||
       process.env.XLB_API_DIRECT_PUBLIC_BASE_URL?.trim() ||
       process.env.XLB_API_PUBLIC_BASE_URL?.trim() ||
       process.env.XLB_PUBLIC_API_BASE_URL?.trim();
 
-    if (gatewayProvision && publicApiBaseUrl) {
+    if (gatewayProvision && publicGatewayBaseUrl) {
       return {
         apiKey: gatewayProvision.apiKey,
         tokenId: gatewayProvision.tokenId,
         keyName: gatewayProvision.keyName,
         keyAlias: gatewayProvision.keyAlias,
-        baseUrl: body.openclawBaseUrl?.trim() || publicApiBaseUrl,
+        baseUrl: body.openclawBaseUrl?.trim() || publicGatewayBaseUrl,
         modelId: body.openclawModelId?.trim() || gatewayProvision.modelId,
         providerId: body.openclawProviderId?.trim() || gatewayProvision.providerId,
       };
@@ -938,7 +940,7 @@ export class DeploymentsService {
     }
 
     const user = process.env.XLB_GATEWAY_TUNNEL_USER?.trim() || "xlb-tunnel";
-    const remotePort = Number(process.env.XLB_GATEWAY_TUNNEL_REMOTE_PORT?.trim() || "3030");
+    const remotePort = Number(process.env.XLB_GATEWAY_TUNNEL_REMOTE_PORT?.trim() || "8000");
     const localPort = Number(process.env.XLB_GATEWAY_TUNNEL_LOCAL_PORT?.trim() || "43030");
     const privateKey =
       this.readGatewayTunnelPrivateKey() ||
@@ -949,7 +951,7 @@ export class DeploymentsService {
       host: parsed.hostname,
       user,
       localPort: Number.isFinite(localPort) && localPort > 0 ? localPort : 43030,
-      remotePort: Number.isFinite(remotePort) && remotePort > 0 ? remotePort : 3030,
+      remotePort: Number.isFinite(remotePort) && remotePort > 0 ? remotePort : 8000,
       privateKey,
     };
   }

@@ -12,7 +12,7 @@ services:
       - caddy_config:/config
     depends_on:
       - api
-      - litellm
+      - kong
 
   api:
     build:
@@ -43,7 +43,7 @@ services:
       XLB_BILLING_SYNC_LIMIT: ${XLB_BILLING_SYNC_LIMIT:-200}
       XLB_RUNTIME_DIST_DIR: /runtime-dist
       XLB_GATEWAY_TUNNEL_USER: ${XLB_GATEWAY_TUNNEL_USER:-xlb-tunnel}
-      XLB_GATEWAY_TUNNEL_REMOTE_PORT: ${XLB_GATEWAY_TUNNEL_REMOTE_PORT:-3030}
+      XLB_GATEWAY_TUNNEL_REMOTE_PORT: ${XLB_GATEWAY_TUNNEL_REMOTE_PORT:-8000}
       XLB_GATEWAY_TUNNEL_LOCAL_PORT: ${XLB_GATEWAY_TUNNEL_LOCAL_PORT:-43030}
       XLB_GATEWAY_TUNNEL_PRIVATE_KEY_PATH: /runtime-secrets/xlb-gateway-tunnel-client
     depends_on:
@@ -52,6 +52,24 @@ services:
     volumes:
       - ../../runtime-dist:/runtime-dist:ro
       - ../../runtime-secrets:/runtime-secrets:ro
+
+  kong:
+    image: kong/kong-gateway:3.13.0.1
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000 reuseport backlog=16384
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: notice
+    volumes:
+      - ./kong/kong.yml:/kong/declarative/kong.yml:ro
+    depends_on:
+      - litellm
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest

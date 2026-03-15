@@ -1,0 +1,47 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: litellm-upstream
+    host: litellm
+    port: 4000
+    protocol: http
+    connect_timeout: 60000
+    read_timeout: 600000
+    write_timeout: 600000
+    routes:
+      - name: litellm-v1
+        paths:
+          - /v1
+        strip_path: false
+        preserve_host: false
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+        protocols:
+          - http
+          - https
+        request_buffering: false
+        response_buffering: false
+      - name: litellm-key
+        paths:
+          - /key
+        strip_path: false
+        preserve_host: false
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+        protocols:
+          - http
+          - https
+        request_buffering: true
+        response_buffering: true
+
+plugins:
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true

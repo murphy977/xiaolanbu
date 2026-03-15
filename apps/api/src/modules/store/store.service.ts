@@ -121,7 +121,7 @@ export class StoreService implements OnModuleInit {
       region: "ap-southeast-1",
       runtimeVersion: "openclaw-0.9.2",
       consoleUrl: "https://console.xiaolanbu.app/demo/cloud",
-      gatewayUrl: "https://api.xiaolanbu.app/gateway/ws_main",
+      gatewayUrl: "https://gateway.xiaolanbu.app/v1",
       createdAt: "2026-03-09T09:20:00.000Z",
       lastHeartbeatAt: "2026-03-09T12:08:00.000Z",
       access: {
@@ -138,7 +138,7 @@ export class StoreService implements OnModuleInit {
       region: "local-device",
       runtimeVersion: "openclaw-0.9.2",
       consoleUrl: "http://127.0.0.1:18789",
-      gatewayUrl: "http://127.0.0.1:3031",
+      gatewayUrl: "http://127.0.0.1:43030/v1",
       createdAt: "2026-03-08T14:10:00.000Z",
       lastHeartbeatAt: "2026-03-09T12:09:00.000Z",
       access: {
@@ -973,8 +973,8 @@ export class StoreService implements OnModuleInit {
       gatewayUrl:
         input.gatewayUrl ??
         (input.mode === "cloud"
-          ? `https://api.xiaolanbu.app/gateway/${input.workspaceId}`
-          : "http://127.0.0.1:3031"),
+          ? process.env.XLB_GATEWAY_PUBLIC_BASE_URL?.trim() || "https://gateway.xiaolanbu.app/v1"
+          : "http://127.0.0.1:43030/v1"),
       createdAt: new Date().toISOString(),
       lastHeartbeatAt: new Date().toISOString(),
       publicIpAddress: input.publicIpAddress,
