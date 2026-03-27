@@ -20,8 +20,13 @@ class DeploymentTagDto {
 }
 
 export class CreateDeploymentDto {
+  @IsOptional()
   @IsString()
-  workspaceId!: string;
+  workspaceId?: string;
+
+  @IsOptional()
+  @IsString()
+  accountScopeId?: string;
 
   @IsString()
   @MinLength(2)
@@ -88,6 +93,18 @@ export class CreateDeploymentDto {
   @IsOptional()
   @IsString()
   openclawGatewayBind?: string;
+
+  @IsOptional()
+  @IsString()
+  platform?: string;
+
+  @IsOptional()
+  @IsString()
+  localDeviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  localDeviceLabel?: string;
 
   @IsOptional()
   @IsString()

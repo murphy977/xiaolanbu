@@ -1,37 +1,84 @@
 {
-  auto_https off
   email {$CADDY_ADMIN_EMAIL}
 }
 
-http://{$SERVER_IP} {
-  handle_path /api/* {
-    reverse_proxy api:3030 {
-      flush_interval -1
-      transport http {
-        versions 1.1
-      }
-    }
+{$ROOT_DOMAIN} {
+  respond "xiaolanbu is running" 200
+}
+
+{$SERVER_IP}:80 {
+  @origin_api {
+    path /api/*
+  }
+  handle @origin_api {
+    uri strip_prefix /api
+    reverse_proxy api-router:8080
   }
 
-  handle /v1/* {
-    reverse_proxy kong:8000 {
-      flush_interval -1
-      transport http {
-        versions 1.1
-      }
-    }
+  @api_legacy {
+    host {$API_DOMAIN}
+    path /api/*
+  }
+  handle @api_legacy {
+    uri strip_prefix /api
+    reverse_proxy api-router:8080
   }
 
-  handle /key/* {
-    reverse_proxy kong:8000 {
-      flush_interval -1
-      transport http {
-        versions 1.1
-      }
-    }
+  @api_root {
+    host {$API_DOMAIN}
+    path /
+  }
+  handle @api_root {
+    respond "xiaolanbu api is running" 200
+  }
+
+  @api_all host {$API_DOMAIN}
+  handle @api_all {
+    reverse_proxy api-router:8080
+  }
+
+  @gateway_root {
+    host {$GATEWAY_DOMAIN}
+    path /
+  }
+  handle @gateway_root {
+    respond "xiaolanbu gateway is running" 200
+  }
+
+  @gateway_all host {$GATEWAY_DOMAIN}
+  handle @gateway_all {
+    reverse_proxy kong:8000
   }
 
   handle {
     respond "xiaolanbu gateway is running" 200
+  }
+}
+
+{$API_DOMAIN} {
+  @api_legacy path /api/*
+  handle @api_legacy {
+    uri strip_prefix /api
+    reverse_proxy api-router:8080
+  }
+
+  @api_root path /
+  handle @api_root {
+    respond "xiaolanbu api is running" 200
+  }
+
+  handle {
+    reverse_proxy api-router:8080
+  }
+}
+
+{$GATEWAY_DOMAIN} {
+  @gateway_root path /
+  handle @gateway_root {
+    respond "xiaolanbu gateway is running" 200
+  }
+
+  handle {
+    reverse_proxy kong:8000
   }
 }

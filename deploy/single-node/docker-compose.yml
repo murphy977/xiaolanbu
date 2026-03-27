@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"
     env_file:
       - .env
     volumes:
@@ -11,87 +13,292 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      - api-router
       - kong
+
+  api-router:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3030:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./nginx/api-router.conf:/etc/nginx/nginx.conf:ro
 
   api:
     build:
       context: ../../
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    ports:
-      - "3030:3030"
+    expose:
+      - "3030"
     env_file:
       - .env
     environment:
       PORT: 3030
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
       ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID}
       ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET}
       ALIYUN_ECS_CONNECT_TIMEOUT_MS: 15000
       ALIYUN_ECS_READ_TIMEOUT_MS: 60000
       LITELLM_PROXY_URL: ${LITELLM_PROXY_URL}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      XLB_APP_PUBLIC_BASE_URL: ${XLB_APP_PUBLIC_BASE_URL}
       XLB_API_PUBLIC_BASE_URL: ${XLB_API_PUBLIC_BASE_URL}
+      XLB_RUNTIME_PUBLIC_BASE_URL: ${XLB_RUNTIME_PUBLIC_BASE_URL:-https://xiaolanbu-runtime-prod.oss-cn-guangzhou.aliyuncs.com}
       XLB_GATEWAY_PUBLIC_BASE_URL: ${XLB_GATEWAY_PUBLIC_BASE_URL}
       XLB_GATEWAY_PROVIDER_ID: ${XLB_GATEWAY_PROVIDER_ID}
       XLB_GATEWAY_MODEL: ${XLB_GATEWAY_MODEL}
+      XLB_UPSTREAM_OPENAI_BASE_URL: ${XLB_UPSTREAM_OPENAI_BASE_URL}
+      XLB_UPSTREAM_OPENAI_API_KEY: ${XLB_UPSTREAM_OPENAI_API_KEY}
+      XLB_UPSTREAM_OPENAI_MODEL: ${XLB_UPSTREAM_OPENAI_MODEL}
       XLB_GATEWAY_KEY_MAX_BUDGET: ${XLB_GATEWAY_KEY_MAX_BUDGET}
       XLB_BILLING_MARKUP_MULTIPLIER: ${XLB_BILLING_MARKUP_MULTIPLIER}
       XLB_BILLING_SYNC_INTERVAL_MS: ${XLB_BILLING_SYNC_INTERVAL_MS:-60000}
       XLB_BILLING_SYNC_LIMIT: ${XLB_BILLING_SYNC_LIMIT:-200}
+      XLB_BILLING_SYNC_LOCK_ID: ${XLB_BILLING_SYNC_LOCK_ID:-18032026}
+      XLB_DEPLOYMENT_JOB_TIMEOUT_MS: ${XLB_DEPLOYMENT_JOB_TIMEOUT_MS:-900000}
+      XLB_DEPLOYMENT_JOB_CONCURRENCY: ${XLB_DEPLOYMENT_JOB_CONCURRENCY:-8}
+      XLB_BILLING_JOB_CONCURRENCY: ${XLB_BILLING_JOB_CONCURRENCY:-20}
+      XLB_SESSION_TTL_MS: ${XLB_SESSION_TTL_MS:-2592000000}
+      XLB_SESSION_TOUCH_INTERVAL_MS: ${XLB_SESSION_TOUCH_INTERVAL_MS:-3600000}
+      XLB_SESSION_CLEANUP_INTERVAL_MS: ${XLB_SESSION_CLEANUP_INTERVAL_MS:-900000}
       XLB_RUNTIME_DIST_DIR: /runtime-dist
       XLB_GATEWAY_TUNNEL_USER: ${XLB_GATEWAY_TUNNEL_USER:-xlb-tunnel}
-      XLB_GATEWAY_TUNNEL_REMOTE_PORT: ${XLB_GATEWAY_TUNNEL_REMOTE_PORT:-8000}
+      XLB_GATEWAY_TUNNEL_REMOTE_PORT: ${XLB_GATEWAY_TUNNEL_REMOTE_PORT:-4000}
       XLB_GATEWAY_TUNNEL_LOCAL_PORT: ${XLB_GATEWAY_TUNNEL_LOCAL_PORT:-43030}
       XLB_GATEWAY_TUNNEL_PRIVATE_KEY_PATH: /runtime-secrets/xlb-gateway-tunnel-client
     depends_on:
-      - postgres
-      - litellm
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3030/v1/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ../../runtime-dist:/runtime-dist:ro
       - ../../runtime-secrets:/runtime-secrets:ro
 
-  kong:
-    image: kong/kong-gateway:3.13.0.1
+  worker:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
+    command: ["node", "dist/worker.main.js"]
+    env_file:
+      - .env
     environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
-      KONG_PROXY_LISTEN: 0.0.0.0:8000 reuseport backlog=16384
-      KONG_ADMIN_LISTEN: 127.0.0.1:8001
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_LOG_LEVEL: notice
-    volumes:
-      - ./kong/kong.yml:/kong/declarative/kong.yml:ro
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID}
+      ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET}
+      ALIYUN_ECS_CONNECT_TIMEOUT_MS: 15000
+      ALIYUN_ECS_READ_TIMEOUT_MS: 60000
+      LITELLM_PROXY_URL: ${LITELLM_PROXY_URL}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      XLB_APP_PUBLIC_BASE_URL: ${XLB_APP_PUBLIC_BASE_URL}
+      XLB_API_PUBLIC_BASE_URL: ${XLB_API_PUBLIC_BASE_URL}
+      XLB_RUNTIME_PUBLIC_BASE_URL: ${XLB_RUNTIME_PUBLIC_BASE_URL:-https://xiaolanbu-runtime-prod.oss-cn-guangzhou.aliyuncs.com}
+      XLB_GATEWAY_PUBLIC_BASE_URL: ${XLB_GATEWAY_PUBLIC_BASE_URL}
+      XLB_GATEWAY_PROVIDER_ID: ${XLB_GATEWAY_PROVIDER_ID}
+      XLB_GATEWAY_MODEL: ${XLB_GATEWAY_MODEL}
+      XLB_UPSTREAM_OPENAI_BASE_URL: ${XLB_UPSTREAM_OPENAI_BASE_URL}
+      XLB_UPSTREAM_OPENAI_API_KEY: ${XLB_UPSTREAM_OPENAI_API_KEY}
+      XLB_UPSTREAM_OPENAI_MODEL: ${XLB_UPSTREAM_OPENAI_MODEL}
+      XLB_GATEWAY_KEY_MAX_BUDGET: ${XLB_GATEWAY_KEY_MAX_BUDGET}
+      XLB_BILLING_MARKUP_MULTIPLIER: ${XLB_BILLING_MARKUP_MULTIPLIER}
+      XLB_DEPLOYMENT_JOB_TIMEOUT_MS: ${XLB_DEPLOYMENT_JOB_TIMEOUT_MS:-900000}
+      XLB_DEPLOYMENT_JOB_CONCURRENCY: ${XLB_DEPLOYMENT_JOB_CONCURRENCY:-8}
+      XLB_BILLING_JOB_CONCURRENCY: ${XLB_BILLING_JOB_CONCURRENCY:-20}
+      XLB_RUNTIME_DIST_DIR: /runtime-dist
+      XLB_GATEWAY_TUNNEL_USER: ${XLB_GATEWAY_TUNNEL_USER:-xlb-tunnel}
+      XLB_GATEWAY_TUNNEL_REMOTE_PORT: ${XLB_GATEWAY_TUNNEL_REMOTE_PORT:-4000}
+      XLB_GATEWAY_TUNNEL_LOCAL_PORT: ${XLB_GATEWAY_TUNNEL_LOCAL_PORT:-43030}
+      XLB_GATEWAY_TUNNEL_PRIVATE_KEY_PATH: /runtime-secrets/xlb-gateway-tunnel-client
+      XLB_JOB_WORKER_MODE: "true"
     depends_on:
-      - litellm
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    volumes:
+      - ../../runtime-dist:/runtime-dist:ro
+      - ../../runtime-secrets:/runtime-secrets:ro
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     restart: unless-stopped
+    expose:
+      - "4000"
     env_file:
       - .env
     environment:
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      XLB_GATEWAY_MODEL_CATALOG: ${XLB_GATEWAY_MODEL_CATALOG}
+      XLB_GATEWAY_MODEL: ${XLB_GATEWAY_MODEL}
+      XLB_UPSTREAM_OPENAI_BASE_URL: ${XLB_UPSTREAM_OPENAI_BASE_URL}
+      XLB_UPSTREAM_OPENAI_API_KEY: ${XLB_UPSTREAM_OPENAI_API_KEY}
+      XLB_UPSTREAM_OPENAI_MODEL: ${XLB_UPSTREAM_OPENAI_MODEL}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       STORE_MODEL_IN_DB: "true"
+    entrypoint:
+      - /bin/sh
+      - -lc
     command:
-      - --config
-      - /app/config.yaml
-      - --port
-      - "4000"
+      - |
+        NUM_WORKERS="$${LITELLM_NUM_WORKERS:-4}";
+        KEEPALIVE_TIMEOUT="$${LITELLM_KEEPALIVE_TIMEOUT:-30}";
+        MAX_REQUESTS_BEFORE_RESTART="$${LITELLM_MAX_REQUESTS_BEFORE_RESTART:-5000}";
+        python /app/render_litellm_config.py > /tmp/litellm.config.yaml
+        exec litellm \
+          --config /tmp/litellm.config.yaml \
+          --port 4000 \
+          --run_gunicorn \
+          --num_workers "$${NUM_WORKERS}" \
+          --keepalive_timeout "$${KEEPALIVE_TIMEOUT}" \
+          --max_requests_before_restart "$${MAX_REQUESTS_BEFORE_RESTART}"
     volumes:
-      - ./litellm.config.yaml:/app/config.yaml:ro
+      - ./render-litellm-config.py:/app/render_litellm_config.py:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5).status == 200 else 1)\""]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  kong:
+    image: kong:3.7
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_NGINX_WORKER_PROCESSES: auto
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/null
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "off"
+      KONG_PROXY_LISTEN: 0.0.0.0:8000 reuseport backlog=16384
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      litellm:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+      cadvisor:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-replace-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${XLB_GRAFANA_PUBLIC_BASE_URL:-http://127.0.0.1:3001}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
 
   postgres:
     image: postgres:16
@@ -100,10 +307,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
+  redis_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:

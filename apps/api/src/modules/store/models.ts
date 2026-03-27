@@ -7,6 +7,8 @@ export interface UserRecord {
   email: string;
   avatarInitial: string;
   activeWorkspaceId: string;
+  accountScopeId?: string;
+  defaultScopeId?: string;
 }
 
 export interface AuthUserRecord extends UserRecord {
@@ -28,6 +30,7 @@ export interface SessionRecord {
   userId: string;
   createdAt: string;
   lastSeenAt: string;
+  expiresAt: string;
 }
 
 export interface WorkspaceRecord {
@@ -67,9 +70,28 @@ export interface DeploymentGatewayKeyRecord {
   baseUrl: string;
 }
 
+export type LocalGatewayCredentialStatus = "active" | "disabled";
+
+export interface LocalGatewayCredentialRecord {
+  id: string;
+  userId: string;
+  accountScopeId: string;
+  tokenId: string;
+  secretKey: string;
+  baseUrl: string;
+  providerId: string;
+  defaultModelId: string;
+  allowedModelIds: string[];
+  status: LocalGatewayCredentialStatus;
+  createdAt: string;
+  updatedAt: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DeploymentRecord {
   id: string;
   workspaceId: string;
+  ownerUserId?: string;
   name: string;
   mode: DeploymentMode;
   status: DeploymentStatus;
@@ -92,6 +114,7 @@ export interface DeploymentRecord {
 export interface WalletRecord {
   id: string;
   workspaceId: string;
+  userId?: string;
   balanceCny: number;
   frozenCny: number;
   currency: "CNY";
@@ -112,6 +135,7 @@ export interface PriceSnapshotRecord {
 export interface UsageLedgerRecord {
   id: string;
   workspaceId: string;
+  userId?: string;
   deploymentId: string;
   gatewayTokenId?: string;
   requestId: string;
@@ -140,6 +164,7 @@ export interface WalletTransactionRecord {
   id: string;
   walletId: string;
   workspaceId: string;
+  userId?: string;
   type: "topup" | "usage" | "refund" | "adjustment";
   title: string;
   amountCny: number;
@@ -152,6 +177,7 @@ export interface WalletTransactionRecord {
 
 export interface UsageSummaryRecord {
   workspaceId: string;
+  userId?: string;
   period: "today" | "7d" | "30d";
   requestCount: number;
   totalTokens: number;
@@ -165,6 +191,7 @@ export interface UsageSummaryRecord {
 
 export interface DeploymentUsageSummaryRecord {
   workspaceId: string;
+  userId?: string;
   deploymentId: string;
   deploymentName: string;
   mode: DeploymentMode;
@@ -185,6 +212,7 @@ export interface DeploymentUsageSummaryRecord {
 export interface BillingFeedRecord {
   id: string;
   workspaceId: string;
+  userId?: string;
   kind: "topup" | "usage" | "adjustment";
   title: string;
   amountCny: number;

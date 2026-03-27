@@ -3,7 +3,15 @@ import * as https from "node:https";
 import { Readable } from "node:stream";
 import { URL } from "node:url";
 
-import { Injectable, InternalServerErrorException, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from "@nestjs/common";
+
+import { DeploymentRecord } from "../../store/models";
+import { StoreService } from "../../store/store.service";
 
 export interface LiteLlmVirtualKeyResult {
   key: string;
@@ -51,6 +59,8 @@ export interface LiteLlmSpendLogRecord {
 export class LiteLlmProxyService {
   private readonly logger = new Logger(LiteLlmProxyService.name);
 
+  constructor(private readonly storeService: StoreService) {}
+
   async proxyOpenAiRequest(input: {
     path: string;
     method: string;
@@ -96,7 +106,7 @@ export class LiteLlmProxyService {
     const normalizedPath = input.path.replace(/^\/+/, "");
     const requestedJsonBody =
       input.body !== undefined && input.method !== "GET" && input.method !== "HEAD"
-        ? this.sanitizeOpenAiPayload(input.path, input.body)
+        ? await this.sanitizeOpenAiPayload(input.path, input.body, input.headers)
         : undefined;
     if (input.body !== undefined && input.method !== "GET" && input.method !== "HEAD") {
       headers["Content-Type"] = "application/json";
@@ -354,7 +364,15 @@ export class LiteLlmProxyService {
     return value ? value.replace(/\/+$/, "") : null;
   }
 
-  private sanitizeOpenAiPayload(path: string, payload: unknown) {
+  getStableModelAlias() {
+    return process.env.XLB_GATEWAY_MODEL_ALIAS?.trim() || "openclaw";
+  }
+
+  private async sanitizeOpenAiPayload(
+    path: string,
+    payload: unknown,
+    headers?: Record<string, string | string[] | undefined>,
+  ) {
     if (!payload || typeof payload !== "object") {
       return payload;
     }
@@ -365,6 +383,14 @@ export class LiteLlmProxyService {
     }
 
     const next = { ...(payload as Record<string, unknown>) };
+    const routedModel = await this.resolveDeploymentRoutedModel(normalizedPath, next, headers);
+    if (routedModel) {
+      next.model = routedModel.modelId;
+      this.logger.log(
+        `rewrote gateway model alias ${routedModel.alias} -> ${routedModel.modelId} for deployment ${routedModel.deploymentId}`,
+      );
+    }
+
     if (Array.isArray(next.tools) && next.tools.length === 0) {
       delete next.tools;
 
@@ -383,5 +409,81 @@ export class LiteLlmProxyService {
     }
 
     return next;
+  }
+
+  private async resolveDeploymentRoutedModel(
+    normalizedPath: string,
+    payload: Record<string, unknown>,
+    headers?: Record<string, string | string[] | undefined>,
+  ) {
+    if (normalizedPath !== "chat/completions") {
+      return null;
+    }
+
+    const requestedModel = typeof payload.model === "string" ? payload.model.trim() : "";
+    const stableAlias = this.getStableModelAlias();
+    if (!requestedModel || requestedModel !== stableAlias) {
+      return null;
+    }
+
+    const bearerKey = this.extractBearerToken(headers);
+    if (!bearerKey) {
+      throw new BadRequestException("当前请求缺少可识别的网关 key，无法解析 deployment 模型。");
+    }
+
+    const deployment = await this.storeService.getDeploymentByGatewaySecretAsync(bearerKey);
+    if (!deployment) {
+      throw new BadRequestException("当前网关 key 没有关联 deployment，无法解析实际模型。");
+    }
+
+    const modelId = this.resolveDeploymentModelId(deployment);
+    if (!modelId) {
+      throw new BadRequestException(`deployment ${deployment.id} 缺少可用模型配置。`);
+    }
+
+    return {
+      alias: stableAlias,
+      deploymentId: deployment.id,
+      modelId,
+    };
+  }
+
+  private extractBearerToken(headers?: Record<string, string | string[] | undefined>) {
+    if (!headers) {
+      return null;
+    }
+
+    const authorizationHeader =
+      headers.authorization ??
+      headers.Authorization ??
+      headers.AUTHORIZATION;
+    const rawAuthorization = Array.isArray(authorizationHeader)
+      ? authorizationHeader[0]
+      : authorizationHeader;
+    if (typeof rawAuthorization !== "string" || !rawAuthorization.trim()) {
+      return null;
+    }
+
+    const match = rawAuthorization.match(/^Bearer\s+(.+)$/i);
+    return match?.[1]?.trim() || null;
+  }
+
+  private resolveDeploymentModelId(deployment: DeploymentRecord) {
+    const gatewayKey =
+      deployment.gatewayKey && typeof deployment.gatewayKey === "object"
+        ? deployment.gatewayKey
+        : undefined;
+    const metadata =
+      deployment.metadata && typeof deployment.metadata === "object"
+        ? deployment.metadata
+        : {};
+    const modelId =
+      (typeof gatewayKey?.modelId === "string" && gatewayKey.modelId.trim()) ||
+      (typeof metadata.modelId === "string" && metadata.modelId.trim()) ||
+      process.env.XLB_UPSTREAM_OPENAI_MODEL?.trim() ||
+      process.env.XLB_GATEWAY_MODEL?.trim() ||
+      "gpt-5.2";
+
+    return modelId || null;
   }
 }

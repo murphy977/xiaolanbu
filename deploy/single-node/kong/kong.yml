@@ -1,11 +1,58 @@
 _format_version: "3.0"
 _transform: true
 
+upstreams:
+  - name: litellm-platform
+    algorithm: round-robin
+    slots: 1000
+    healthchecks:
+      active:
+        type: http
+        http_path: /health/liveliness
+        timeout: 5
+        concurrency: 10
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          tcp_failures: 2
+          timeouts: 2
+          http_failures: 3
+          http_statuses:
+            - 429
+            - 500
+            - 502
+            - 503
+            - 504
+      passive:
+        healthy:
+          successes: 3
+          http_statuses:
+            - 200
+            - 201
+            - 202
+            - 204
+        unhealthy:
+          tcp_failures: 2
+          timeouts: 2
+          http_failures: 3
+          http_statuses:
+            - 429
+            - 500
+            - 502
+            - 503
+            - 504
+    targets:
+      - target: litellm:4000
+        weight: 100
+
 services:
   - name: litellm-upstream
-    host: litellm
+    host: litellm-platform
     port: 4000
     protocol: http
+    retries: 3
     connect_timeout: 60000
     read_timeout: 600000
     write_timeout: 600000
@@ -18,6 +65,10 @@ services:
         methods:
           - GET
           - POST
+          - HEAD
+          - PUT
+          - PATCH
+          - DELETE
           - OPTIONS
         protocols:
           - http
@@ -32,6 +83,10 @@ services:
         methods:
           - GET
           - POST
+          - HEAD
+          - PUT
+          - PATCH
+          - DELETE
           - OPTIONS
         protocols:
           - http
@@ -45,3 +100,23 @@ plugins:
       header_name: X-Request-ID
       generator: uuid
       echo_downstream: true
+  - name: request-size-limiting
+    service: litellm-upstream
+    config:
+      allowed_payload_size: 25
+      size_unit: megabytes
+      require_content_length: false
+  - name: rate-limiting
+    service: litellm-upstream
+    config:
+      second: 10000
+      minute: 600000
+      hour: 10000000
+      policy: redis
+      fault_tolerant: true
+      hide_client_headers: false
+      limit_by: ip
+      redis:
+        host: redis
+        port: 6379
+        timeout: 2000

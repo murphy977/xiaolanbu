@@ -20,8 +20,8 @@ import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 export class WorkspacesController {
   constructor(private readonly storeService: StoreService) {}
 
-  private requireUser(sessionToken?: string) {
-    const user = this.storeService.getUserBySessionToken(sessionToken);
+  private async requireUser(sessionToken?: string) {
+    const user = await this.storeService.getUserBySessionTokenAsync(sessionToken);
     if (!user) {
       throw new UnauthorizedException("请先登录");
     }
@@ -29,11 +29,11 @@ export class WorkspacesController {
   }
 
   @Get()
-  listWorkspaces(@Headers("x-xlb-session") sessionToken?: string) {
-    const currentUser = this.requireUser(sessionToken);
+  async listWorkspaces(@Headers("x-xlb-session") sessionToken?: string) {
+    const currentUser = await this.requireUser(sessionToken);
     return {
       activeWorkspaceId: currentUser.activeWorkspaceId,
-      items: this.storeService.listUserWorkspaces(currentUser.id),
+      items: await this.storeService.listUserWorkspacesAsync(currentUser.id),
     };
   }
 
@@ -42,7 +42,7 @@ export class WorkspacesController {
     @Headers("x-xlb-session") sessionToken: string | undefined,
     @Body() body: CreateWorkspaceDto,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     return this.storeService.createWorkspaceForUser({
       userId: currentUser.id,
       name: body.name,
@@ -50,15 +50,17 @@ export class WorkspacesController {
   }
 
   @Get(":workspaceId")
-  getWorkspace(
+  async getWorkspace(
     @Param("workspaceId") workspaceId: string,
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
-    const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
-    const workspace = this.storeService.getWorkspace(workspaceId);
-    const wallet = this.storeService.getWallet(workspaceId);
-    const deployments = this.storeService.listDeployments(workspaceId);
+    const currentUser = await this.requireUser(sessionToken);
+    await this.storeService.assertUserHasWorkspaceAccessAsync(currentUser.id, workspaceId);
+    const [workspace, wallet, deployments] = await Promise.all([
+      this.storeService.getWorkspaceAsync(workspaceId),
+      this.storeService.getWalletAsync(workspaceId),
+      this.storeService.listDeploymentsAsync(workspaceId),
+    ]);
 
     return {
       workspace,
@@ -73,7 +75,7 @@ export class WorkspacesController {
     @Headers("x-xlb-session") sessionToken: string | undefined,
     @Body() body: UpdateWorkspaceDto,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     return this.storeService.updateWorkspaceName({
       currentUserId: currentUser.id,
       workspaceId,
@@ -86,7 +88,7 @@ export class WorkspacesController {
     @Param("workspaceId") workspaceId: string,
     @Headers("x-xlb-session") sessionToken: string | undefined,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     return this.storeService.leaveWorkspace({
       currentUserId: currentUser.id,
       workspaceId,
@@ -98,7 +100,7 @@ export class WorkspacesController {
     @Param("workspaceId") workspaceId: string,
     @Headers("x-xlb-session") sessionToken: string | undefined,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     return this.storeService.archiveWorkspace({
       currentUserId: currentUser.id,
       workspaceId,
@@ -106,17 +108,17 @@ export class WorkspacesController {
   }
 
   @Get(":workspaceId/members")
-  listWorkspaceMembers(
+  async listWorkspaceMembers(
     @Param("workspaceId") workspaceId: string,
     @Headers("x-xlb-session") sessionToken?: string,
   ) {
-    const currentUser = this.requireUser(sessionToken);
-    this.storeService.assertUserHasWorkspaceAccess(currentUser.id, workspaceId);
+    const currentUser = await this.requireUser(sessionToken);
+    await this.storeService.assertUserHasWorkspaceAccessAsync(currentUser.id, workspaceId);
 
     return {
-      items: this.storeService.listWorkspaceMembers(workspaceId),
+      items: await this.storeService.listWorkspaceMembersAsync(workspaceId),
       currentUserRole:
-        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+        (await this.storeService.getWorkspaceMembershipAsync(currentUser.id, workspaceId))?.role ?? null,
     };
   }
 
@@ -126,7 +128,7 @@ export class WorkspacesController {
     @Headers("x-xlb-session") sessionToken: string | undefined,
     @Body() body: AddWorkspaceMemberDto,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     const items = await this.storeService.addWorkspaceMemberByEmail({
       currentUserId: currentUser.id,
       workspaceId,
@@ -137,7 +139,7 @@ export class WorkspacesController {
     return {
       items,
       currentUserRole:
-        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+        (await this.storeService.getWorkspaceMembershipAsync(currentUser.id, workspaceId))?.role ?? null,
     };
   }
 
@@ -148,7 +150,7 @@ export class WorkspacesController {
     @Headers("x-xlb-session") sessionToken: string | undefined,
     @Body() body: UpdateWorkspaceMemberDto,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     const items = await this.storeService.updateWorkspaceMemberRole({
       currentUserId: currentUser.id,
       workspaceId,
@@ -159,7 +161,7 @@ export class WorkspacesController {
     return {
       items,
       currentUserRole:
-        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+        (await this.storeService.getWorkspaceMembershipAsync(currentUser.id, workspaceId))?.role ?? null,
     };
   }
 
@@ -169,7 +171,7 @@ export class WorkspacesController {
     @Param("memberId") memberId: string,
     @Headers("x-xlb-session") sessionToken: string | undefined,
   ) {
-    const currentUser = this.requireUser(sessionToken);
+    const currentUser = await this.requireUser(sessionToken);
     const items = await this.storeService.removeWorkspaceMember({
       currentUserId: currentUser.id,
       workspaceId,
@@ -179,7 +181,7 @@ export class WorkspacesController {
     return {
       items,
       currentUserRole:
-        this.storeService.getWorkspaceMembership(currentUser.id, workspaceId)?.role ?? null,
+        (await this.storeService.getWorkspaceMembershipAsync(currentUser.id, workspaceId))?.role ?? null,
     };
   }
 }

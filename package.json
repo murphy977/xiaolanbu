@@ -10,9 +10,20 @@
     "api:dev": "npm --prefix apps/api run dev",
     "api:build": "npm --prefix apps/api run build",
     "api:start": "npm --prefix apps/api run start",
+    "platform:bundle": "bash scripts/package-deploy-bundle.sh",
+    "platform:up": "bash scripts/platform-up.sh",
+    "pressure:api-ready": "bash scripts/run-loadtest.sh api-ready",
+    "pressure:api-metrics": "bash scripts/run-loadtest.sh api-metrics",
+    "pressure:litellm-models": "bash scripts/run-loadtest.sh litellm-models",
+    "pressure:gateway-models": "bash scripts/run-loadtest.sh gateway-models",
+    "pressure:gateway-models:local": "bash scripts/run-loadtest.sh gateway-models-local",
+    "pressure:gateway-chat": "bash scripts/run-loadtest.sh gateway-chat",
+    "pressure:gateway-chat:local": "bash scripts/run-loadtest.sh gateway-chat-local",
     "desktop:start": "npm --prefix apps/desktop start",
+    "desktop:smoke:local-chat": "npm --prefix apps/desktop run smoke:local-chat",
     "desktop:preview": "npm --prefix apps/desktop run preview",
     "runtime:build:mac": "bash scripts/build-openclaw-macos-runtime.sh",
+    "runtime:build:windows": "bash scripts/build-openclaw-windows-runtime.sh",
     "runtime:publish": "bash scripts/publish-runtime-dist.sh"
   }
 }
