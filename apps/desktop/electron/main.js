@@ -8436,12 +8436,14 @@ async function runLocalGatewayChatTask(params) {
   });
   const { client } = handle;
   const runId = createGatewayRequestId();
+  let timedOut = false;
 
   try {
     let unsubscribe = () => {};
     let timer = null;
     const terminalPayloadPromise = new Promise((resolve, reject) => {
       timer = setTimeout(() => {
+        timedOut = true;
         unsubscribe();
         reject(new Error("workflow run timeout"));
       }, timeoutMs);
@@ -8507,6 +8509,17 @@ async function runLocalGatewayChatTask(params) {
             : "workflow failed",
     };
   } catch (error) {
+    if (timedOut) {
+      try {
+        await abortGatewayChat({
+          dashboardUrl,
+          sessionKey,
+          runId,
+        });
+      } catch {
+        // ignore abort cleanup failure
+      }
+    }
     handle.invalidate();
     return {
       ok: false,
@@ -8538,7 +8551,7 @@ function formatCommerceCompletedStepsForPrompt(completedSteps) {
 
   return items
     .map((step) => {
-      const outputText = truncateCommercePromptSection(step?.outputText, 5000) || "无可用输出。";
+      const outputText = truncateCommercePromptSection(step?.outputText, 2400) || "无可用输出。";
       return [
         `### ${step?.label || step?.id || "步骤"} (${step?.agentId || "unknown-agent"})`,
         "",
@@ -8569,14 +8582,15 @@ function buildCommerceWorkflowTaskPrompt({
     "不要再调用工具读取文件；直接基于下面内容完成任务。",
     "如果下面附带了上游产物，要把它们视为已确定输入，不要擅自忽略。",
     "输出要求：中文 Markdown，直接给结果，不要寒暄，不要解释你会怎么做。",
+    "默认采用紧凑输出：每个一级小节优先 3-6 个 bullet，避免长段铺垫，总长度尽量控制在 1500 中文字以内。",
     "",
     "## 业务背景",
     "",
-    truncateCommercePromptSection(businessMarkdown, 6000) || "暂无长期业务背景。",
+    truncateCommercePromptSection(businessMarkdown, 2000) || "暂无长期业务背景。",
     "",
     "## 当前 Brief",
     "",
-    truncateCommercePromptSection(briefMarkdown, 8000) || "未提供",
+    truncateCommercePromptSection(briefMarkdown, 3000) || "未提供",
     "",
     "## 上游产物",
     "",
@@ -8967,7 +8981,7 @@ async function openCommerceSession(payload) {
     typeof payload?.sessionKey === "string" && payload.sessionKey.trim()
       ? payload.sessionKey.trim()
       : buildCommerceAgentSessionKey(agent.id);
-  const [history, sessions] = await Promise.all([
+  const [historyResult, sessionsResult] = await Promise.allSettled([
     fetchGatewayChatHistory({
       dashboardUrl: runtimeStatus.dashboardUrl,
       sessionKey,
@@ -8984,16 +8998,77 @@ async function openCommerceSession(payload) {
       limit: 200,
     }),
   ]);
+  const history = historyResult.status === "fulfilled" ? historyResult.value : null;
+  const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : null;
+  const warnings = [];
+
+  if (historyResult.status === "rejected") {
+    warnings.push("历史消息加载失败，已降级为空白会话。");
+  }
+  if (sessionsResult.status === "rejected") {
+    warnings.push("会话列表加载失败，已降级为空列表。");
+  }
+  if (!history && !sessions) {
+    const firstError =
+      historyResult.status === "rejected"
+        ? historyResult.reason
+        : sessionsResult.status === "rejected"
+          ? sessionsResult.reason
+          : null;
+    return {
+      ok: false,
+      error:
+        firstError instanceof Error && firstError.message.trim()
+          ? firstError.message.trim()
+          : "加载电商会话失败。",
+    };
+  }
+  const messages = Array.isArray(history?.messages) ? history.messages : [];
+  const latestAssistantMessage = findLatestAssistantMessage(messages);
+  const normalizedSessions = Array.isArray(sessions?.sessions)
+    ? sessions.sessions.map((entry) => {
+        if (!isPlainObject(entry) || entry.key !== sessionKey) {
+          return entry;
+        }
+
+        const stopReason =
+          typeof latestAssistantMessage?.stopReason === "string"
+            ? latestAssistantMessage.stopReason.trim().toLowerCase()
+            : "";
+        const errorMessage =
+          typeof latestAssistantMessage?.errorMessage === "string"
+            ? latestAssistantMessage.errorMessage.trim()
+            : "";
+
+        if (stopReason === "aborted" || errorMessage) {
+          return {
+            ...entry,
+            status: "aborted",
+            abortedLastRun: true,
+          };
+        }
+
+        if (latestAssistantMessage && entry.status === "running") {
+          return {
+            ...entry,
+            status: "done",
+          };
+        }
+
+        return entry;
+      })
+    : [];
 
   return {
     ok: true,
     agent: buildPublicCommerceAgent(agent),
     sessionKey,
     thinkingLevel: history?.thinkingLevel ?? null,
-    messages: Array.isArray(history?.messages) ? history.messages : [],
-    sessions: Array.isArray(sessions?.sessions) ? sessions.sessions : [],
+    messages,
+    sessions: normalizedSessions,
     defaults: isPlainObject(sessions?.defaults) ? sessions.defaults : {},
     dashboardUrl: runtimeStatus.dashboardUrl,
+    warnings,
   };
 }
 
@@ -9086,7 +9161,7 @@ async function runCommerceWorkflow(payload) {
     const workflowTimeoutMs =
       Number.isFinite(payload?.timeoutMs) && payload.timeoutMs > 0
         ? Math.min(Math.trunc(payload.timeoutMs), 600000)
-        : 180000;
+        : 600000;
     const completedSteps = [];
     const stepArtifacts = [];
     let workflowError = "";
