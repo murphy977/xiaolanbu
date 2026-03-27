@@ -1486,12 +1486,22 @@ function sessionKeysLikelyMatch(expected, actual) {
     return true;
   }
 
-  if (left === "main" && /(^|:)main$/.test(right)) {
-    return true;
-  }
+  const aliasesFor = (value) => {
+    const aliases = new Set([value]);
+    const agentScopedMatch = value.match(/^agent:[^:]+:(.+)$/);
+    if (agentScopedMatch && agentScopedMatch[1]) {
+      aliases.add(agentScopedMatch[1]);
+    }
+    return aliases;
+  };
 
-  if (right === "main" && /(^|:)main$/.test(left)) {
-    return true;
+  const leftAliases = aliasesFor(left);
+  const rightAliases = aliasesFor(right);
+
+  for (const candidate of leftAliases) {
+    if (rightAliases.has(candidate)) {
+      return true;
+    }
   }
 
   return false;
@@ -8456,7 +8466,7 @@ async function runLocalGatewayChatTask(params) {
         if (
           typeof eventPayload.sessionKey === "string" &&
           eventPayload.sessionKey.trim() &&
-          eventPayload.sessionKey.trim() !== sessionKey
+          !sessionKeysLikelyMatch(sessionKey, eventPayload.sessionKey)
         ) {
           return;
         }
@@ -9027,7 +9037,7 @@ async function openCommerceSession(payload) {
   const latestAssistantMessage = findLatestAssistantMessage(messages);
   const normalizedSessions = Array.isArray(sessions?.sessions)
     ? sessions.sessions.map((entry) => {
-        if (!isPlainObject(entry) || entry.key !== sessionKey) {
+        if (!isPlainObject(entry) || !sessionKeysLikelyMatch(sessionKey, entry.key)) {
           return entry;
         }
 
