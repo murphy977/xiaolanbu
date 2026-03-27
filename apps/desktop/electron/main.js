@@ -2972,6 +2972,62 @@ function resolveManagedProfileIds(binding) {
   return profileIds;
 }
 
+function hasLocalManagedProviderApiKey(binding, config, authStore) {
+  const managedProviderIds = resolveManagedProviderIds(binding);
+  const managedProfileIds = resolveManagedProfileIds(binding);
+  const authProfiles = isPlainObject(authStore?.profiles) ? authStore.profiles : {};
+  const configProviders =
+    isPlainObject(config?.models) && isPlainObject(config.models.providers)
+      ? config.models.providers
+      : {};
+
+  for (const profileId of managedProfileIds) {
+    const profile = authProfiles[profileId];
+    if (
+      isPlainObject(profile) &&
+      typeof profile.key === "string" &&
+      profile.key.trim()
+    ) {
+      return true;
+    }
+  }
+
+  for (const providerId of managedProviderIds) {
+    const provider = configProviders[providerId];
+    if (
+      isPlainObject(provider) &&
+      typeof provider.apiKey === "string" &&
+      provider.apiKey.trim()
+    ) {
+      return true;
+    }
+  }
+
+  if (!managedProviderIds.length && !managedProfileIds.length) {
+    for (const profile of Object.values(authProfiles)) {
+      if (
+        isPlainObject(profile) &&
+        typeof profile.key === "string" &&
+        profile.key.trim()
+      ) {
+        return true;
+      }
+    }
+
+    for (const provider of Object.values(configProviders)) {
+      if (
+        isPlainObject(provider) &&
+        typeof provider.apiKey === "string" &&
+        provider.apiKey.trim()
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function clearLocalBindingState() {
   try {
     fs.rmSync(LOCAL_BINDING_STATE_PATH, { force: true });
@@ -7229,8 +7285,7 @@ async function getLocalOpenClawStatus() {
   }
   const config = readJsonFile(LOCAL_OPENCLAW_CONFIG_PATH);
   const authStore = readLocalOpenClawAuthStore();
-  const authProfiles = isPlainObject(authStore?.profiles) ? authStore.profiles : {};
-  const localApiKeyConfigured = Object.keys(authProfiles).length > 0;
+  const localApiKeyConfigured = hasLocalManagedProviderApiKey(binding, config, authStore);
   const currentModelId =
     extractConcreteManagedModelIdFromSessionStore(config) ||
     extractConcreteManagedModelIdFromConfig(config);
