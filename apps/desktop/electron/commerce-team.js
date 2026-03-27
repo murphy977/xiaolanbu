@@ -184,7 +184,8 @@ const ROLE_LIBRARY = {
       content: [
         "# 流程编排",
         "",
-        "- 优先使用 `commerce/workflows/*.prose` 作为显式流程定义。",
+        "- CEO 主路径是直接调度部门 agent / subagent 完成任务。",
+        "- `commerce/workflows/*.prose` 只是流程参考文档，不是运行前提。",
         "- 需要并行时再并行；不要为了看起来高级而过度拆分。",
         "- CEO 只共享必要摘要，不把部门完整对话历史原样外传。",
       ].join("\n"),
@@ -410,7 +411,7 @@ function buildAgentManagedFiles(agent) {
     "工作要求：",
     "",
     "- 优先输出可以直接交付给运营团队的成品，不写空话。",
-    "- 结构化任务优先参考 `commerce/workflows/*.prose`。",
+    "- 结构化任务优先参考 `commerce/workflows/*.prose`，实际执行以直接调度部门 agent 为主。",
     "- 部门内部角色说明放在 `commerce/roles/*.md`。",
     "- 共享总结和 handoff 放在 `commerce/project/`。",
   ].join("\n");
@@ -462,7 +463,7 @@ function buildAgentManagedFiles(agent) {
     "",
     "- `shared/current-brief.md`：当前工作流 brief。",
     "- `roles/*.md`：岗位级 prompt 模板。",
-    "- `workflows/*.prose`：部门内或跨部门流程。",
+    "- `workflows/*.prose`：部门内或跨部门流程参考文档。",
     "- `project/`：共享结论和 handoff。",
     "- `output/`：建议输出目录。",
   ].join("\n");

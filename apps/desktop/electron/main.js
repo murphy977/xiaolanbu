@@ -101,7 +101,7 @@ const LOCAL_COMMERCE_RUNS_DIR = path.join(LOCAL_COMMERCE_STATE_DIR, "runs");
 const LOCAL_COMMERCE_ACTIVE_RUNS_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "active-runs.json");
 const LOCAL_COMMERCE_MANIFEST_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "team.json");
 const COMMERCE_PLUGIN_ID = "open-prose";
-const COMMERCE_TEAM_VERSION = "2026.3.27";
+const COMMERCE_TEAM_VERSION = "2026.3.28";
 const LOCAL_RESPONSES_MODEL_ALIAS = "openclaw";
 const GATEWAY_CHAT_EVENT_CHANNEL = "xiaolanbu:gateway-chat-event";
 const RESPONSES_STREAM_IDLE_TIMEOUT_MS = Number(
@@ -7913,16 +7913,6 @@ function ensureLocalCommerceConfig(context, agentDefinitions) {
     delete nextConfig.meta;
   }
 
-  nextConfig.plugins = isPlainObject(nextConfig.plugins) ? nextConfig.plugins : {};
-  nextConfig.plugins.entries = isPlainObject(nextConfig.plugins.entries) ? nextConfig.plugins.entries : {};
-  const existingPluginEntry = isPlainObject(nextConfig.plugins.entries[COMMERCE_PLUGIN_ID])
-    ? nextConfig.plugins.entries[COMMERCE_PLUGIN_ID]
-    : {};
-  nextConfig.plugins.entries[COMMERCE_PLUGIN_ID] = {
-    ...existingPluginEntry,
-    enabled: true,
-  };
-
   nextConfig.models = isPlainObject(nextConfig.models) ? nextConfig.models : {};
   nextConfig.models.providers = isPlainObject(nextConfig.models.providers) ? nextConfig.models.providers : {};
   const currentProviderConfig = isPlainObject(nextConfig.models.providers[context.providerId])
@@ -8062,18 +8052,7 @@ async function ensureLocalCommerceTeam() {
 
   sanitizeLegacyLocalCommerceConfigMarker();
   const pluginInfo = await inspectLocalOpenClawPlugin(COMMERCE_PLUGIN_ID);
-  if (!pluginInfo.ok) {
-    return {
-      ok: false,
-      error: `无法检查本地 open-prose 插件状态：${pluginInfo.error}`,
-    };
-  }
-  if (!pluginInfo.present) {
-    return {
-      ok: false,
-      error: "当前本地 OpenClaw 缺少 open-prose 插件，电商工作流无法启用。请先修复本地运行时。",
-    };
-  }
+  const openProseAvailable = Boolean(pluginInfo?.ok && pluginInfo.present && pluginInfo.enabled);
 
   const providerContext = resolveLocalManagedProviderContext(runtimeStatus);
   if (!providerContext.ok) {
@@ -8142,10 +8121,18 @@ async function ensureLocalCommerceTeam() {
     allowedModelIds: providerContext.requiredModelIds,
     agents: agentDefinitions.map((entry) => buildPublicCommerceAgent(entry)),
     workflows: COMMERCE_WORKFLOW_DEFINITIONS.map((entry) => buildPublicCommerceWorkflow(entry)),
+    workflowRuntime: {
+      engine: "native-orchestrator",
+      openProseAvailable,
+      openProseError:
+        !pluginInfo?.ok && typeof pluginInfo?.error === "string" ? pluginInfo.error : "",
+    },
     plugin: {
       id: COMMERCE_PLUGIN_ID,
-      present: true,
-      enabled: true,
+      required: false,
+      present: Boolean(pluginInfo?.present),
+      enabled: Boolean(pluginInfo?.enabled),
+      status: openProseAvailable ? "available" : "optional",
     },
   };
 }
