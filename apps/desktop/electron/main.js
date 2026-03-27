@@ -7,6 +7,12 @@ const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 const { Client: SshClient } = require("ssh2");
 const { WebSocket } = require("ws");
+const {
+  COMMERCE_AGENT_BLUEPRINTS,
+  COMMERCE_WORKFLOW_DEFINITIONS,
+  buildCommerceRuntimeDefinitions,
+  buildAgentManagedFiles,
+} = require("./commerce-team");
 
 const IS_WINDOWS = process.platform === "win32";
 const WINDOWS_LOCAL_APP_DATA =
@@ -90,6 +96,12 @@ const LOCAL_GATEWAY_TUNNEL_PORT = 43030;
 const LOCAL_GATEWAY_TUNNEL_REMOTE_PORT = 3030;
 const LOCAL_BINDING_STATE_PATH = path.join(LOCAL_APP_SUPPORT_DIR, "local-openclaw-binding.json");
 const LOCAL_DESKTOP_DEVICE_IDENTITY_PATH = path.join(LOCAL_APP_SUPPORT_DIR, "desktop-device.json");
+const LOCAL_COMMERCE_STATE_DIR = path.join(LOCAL_APP_SUPPORT_DIR, "commerce");
+const LOCAL_COMMERCE_RUNS_DIR = path.join(LOCAL_COMMERCE_STATE_DIR, "runs");
+const LOCAL_COMMERCE_ACTIVE_RUNS_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "active-runs.json");
+const LOCAL_COMMERCE_MANIFEST_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "team.json");
+const COMMERCE_PLUGIN_ID = "open-prose";
+const COMMERCE_TEAM_VERSION = "2026.3.27";
 const LOCAL_RESPONSES_MODEL_ALIAS = "openclaw";
 const GATEWAY_CHAT_EVENT_CHANNEL = "xiaolanbu:gateway-chat-event";
 const RESPONSES_STREAM_IDLE_TIMEOUT_MS = Number(
@@ -1767,6 +1779,9 @@ async function fetchGatewaySessions(params) {
       ...(Number.isFinite(params?.activeMinutes) && params.activeMinutes > 0
         ? { activeMinutes: Math.min(Math.trunc(params.activeMinutes), 24 * 60) }
         : {}),
+      ...(typeof params?.agentId === "string" && params.agentId.trim()
+        ? { agentId: params.agentId.trim() }
+        : {}),
     });
 
     return {
@@ -2057,6 +2072,7 @@ async function sendGatewayChatMessageViaRpc(webContents, params) {
 }
 
 async function sendGatewayChatMessageViaResponses(webContents, params) {
+  const agentId = resolveGatewayAgentIdFromParams(params);
   const sessionKey =
     typeof params?.sessionKey === "string" && params.sessionKey.trim()
       ? params.sessionKey.trim()
@@ -2185,7 +2201,7 @@ async function sendGatewayChatMessageViaResponses(webContents, params) {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
-          "x-openclaw-agent-id": "main",
+          "x-openclaw-agent-id": agentId,
           "x-openclaw-session-key": sessionKey,
         },
         body: JSON.stringify({
@@ -3163,6 +3179,27 @@ function sanitizeLocalOpenClawCredentials() {
     nextBinding.updatedAt = new Date().toISOString();
     writeJsonFile(LOCAL_BINDING_STATE_PATH, nextBinding);
   }
+}
+
+function sanitizeLegacyLocalCommerceConfigMarker() {
+  const config = readJsonFile(LOCAL_OPENCLAW_CONFIG_PATH);
+  if (!isPlainObject(config) || !isPlainObject(config.meta)) {
+    return false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(config.meta, "xiaolanbuCommerceTeamVersion")) {
+    return false;
+  }
+
+  const nextConfig = JSON.parse(JSON.stringify(config));
+  if (isPlainObject(nextConfig.meta)) {
+    delete nextConfig.meta.xiaolanbuCommerceTeamVersion;
+    if (Object.keys(nextConfig.meta).length === 0) {
+      delete nextConfig.meta;
+    }
+  }
+
+  writeJsonFile(LOCAL_OPENCLAW_CONFIG_PATH, nextConfig);
+  return true;
 }
 
 function isPlainObject(value) {
@@ -7268,6 +7305,7 @@ function checkLocalPortOpen(port) {
 
 async function getLocalOpenClawStatus() {
   const runtime = await detectLocalOpenClawRuntime();
+  sanitizeLegacyLocalCommerceConfigMarker();
   const [dashboardPortOpen, browserControlPortOpen] = await Promise.all([
     checkLocalPortOpen(LOCAL_DEFAULT_DASHBOARD_PORT),
     checkLocalPortOpen(LOCAL_DEFAULT_BROWSER_CONTROL_PORT),
@@ -7385,6 +7423,1914 @@ async function getLocalOpenClawStatus() {
     baseUrl,
     bindingUpdatedAt: typeof binding?.updatedAt === "string" ? binding.updatedAt : "",
   };
+}
+
+function serializeJsonWithTrailingNewline(value) {
+  return JSON.stringify(value, null, 2) + "\n";
+}
+
+function readTextFileIfExists(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return "";
+    }
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function writeTextFileIfChanged(filePath, content) {
+  const nextContent = typeof content === "string" ? content : String(content ?? "");
+  const existingContent = readTextFileIfExists(filePath);
+  if (existingContent === nextContent) {
+    return false;
+  }
+  ensureDirectory(path.dirname(filePath));
+  fs.writeFileSync(filePath, nextContent, "utf8");
+  return true;
+}
+
+function writeJsonFileIfChanged(filePath, value) {
+  return writeTextFileIfChanged(filePath, serializeJsonWithTrailingNewline(value));
+}
+
+function isProcessAlive(pid) {
+  const normalizedPid = Number(pid);
+  if (!Number.isInteger(normalizedPid) || normalizedPid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(normalizedPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readCommerceActiveRunsState() {
+  const parsed = readJsonFile(LOCAL_COMMERCE_ACTIVE_RUNS_PATH);
+  if (!isPlainObject(parsed?.runs)) {
+    return { runs: {} };
+  }
+  return {
+    runs: { ...parsed.runs },
+  };
+}
+
+function writeCommerceActiveRunsState(state) {
+  const runs = isPlainObject(state?.runs) ? state.runs : {};
+  writeJsonFileIfChanged(LOCAL_COMMERCE_ACTIVE_RUNS_PATH, {
+    runs,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function markCommerceRunActive(runId, details = {}) {
+  if (typeof runId !== "string" || !runId.trim()) {
+    return;
+  }
+  const state = readCommerceActiveRunsState();
+  state.runs[runId] = {
+    pid: process.pid,
+    startedAt:
+      typeof details.startedAt === "string" && details.startedAt ? details.startedAt : new Date().toISOString(),
+    workflowId: typeof details.workflowId === "string" ? details.workflowId : "",
+    sessionKey: typeof details.sessionKey === "string" ? details.sessionKey : "",
+  };
+  writeCommerceActiveRunsState(state);
+}
+
+function clearCommerceRunActive(runId) {
+  if (typeof runId !== "string" || !runId.trim()) {
+    return;
+  }
+  const state = readCommerceActiveRunsState();
+  if (!Object.prototype.hasOwnProperty.call(state.runs, runId)) {
+    return;
+  }
+  delete state.runs[runId];
+  writeCommerceActiveRunsState(state);
+}
+
+function normalizeCommerceIdentifier(value, fallback = "") {
+  const normalized =
+    typeof value === "string"
+      ? value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+/g, "")
+          .replace(/-+$/g, "")
+      : "";
+  return normalized || fallback;
+}
+
+function resolveGatewayAgentIdFromParams(params) {
+  const explicitAgentId =
+    typeof params?.agentId === "string" ? normalizeCommerceIdentifier(params.agentId, "") : "";
+  if (explicitAgentId) {
+    return explicitAgentId;
+  }
+
+  const sessionKey =
+    typeof params?.sessionKey === "string" ? params.sessionKey.trim().toLowerCase() : "";
+  const parsed = sessionKey.match(/^agent:([a-z0-9][a-z0-9_-]{0,63}):/i);
+  return parsed?.[1] ? parsed[1].toLowerCase() : "main";
+}
+
+function listCommerceRuntimeAgents() {
+  return buildCommerceRuntimeDefinitions({
+    stateDir: LOCAL_OPENCLAW_STATE_DIR,
+  });
+}
+
+function findCommerceAgentDefinition(agentId) {
+  const normalizedAgentId = normalizeCommerceIdentifier(agentId, "");
+  if (!normalizedAgentId) {
+    return null;
+  }
+  return listCommerceRuntimeAgents().find((entry) => entry.id === normalizedAgentId) ?? null;
+}
+
+function findCommerceWorkflowDefinition(workflowId) {
+  const normalizedWorkflowId = normalizeCommerceIdentifier(workflowId, "");
+  if (!normalizedWorkflowId) {
+    return null;
+  }
+  return COMMERCE_WORKFLOW_DEFINITIONS.find((entry) => entry.id === normalizedWorkflowId) ?? null;
+}
+
+function buildCommerceAgentSessionKey(agentId, sessionSuffix = "main") {
+  return `agent:${normalizeCommerceIdentifier(agentId, "main")}:${normalizeCommerceIdentifier(
+    sessionSuffix,
+    "main",
+  )}`;
+}
+
+function buildCommerceWorkflowSessionKey(agentId, workflowId, runId) {
+  return buildCommerceAgentSessionKey(
+    agentId,
+    `workflow-${normalizeCommerceIdentifier(workflowId, "workflow")}-${normalizeCommerceIdentifier(
+      runId,
+      "run",
+    )}`,
+  );
+}
+
+function buildPublicCommerceAgent(agent) {
+  return {
+    id: agent.id,
+    label: agent.label,
+    department: agent.department,
+    kind: agent.kind,
+    status: agent.availability === "coming-soon" ? "coming-soon" : "ready",
+    availability: agent.availability,
+    workspace: agent.workspace,
+    defaultModelId: agent.defaultModelId,
+    fallbackModelIds: Array.isArray(agent.fallbackModelIds) ? [...agent.fallbackModelIds] : [],
+    summary: agent.summary,
+  };
+}
+
+function buildPublicCommerceWorkflow(workflow) {
+  return {
+    id: workflow.id,
+    label: workflow.label,
+    description: workflow.description,
+    targetAgentId: workflow.targetAgentId,
+    availability: workflow.availability,
+    status: workflow.availability === "coming-soon" ? "coming-soon" : "ready",
+    proseFile: workflow.proseFile,
+  };
+}
+
+function resolveManagedProviderIdFromConfig(config) {
+  const modelPrimary =
+    typeof config?.agents?.defaults?.model?.primary === "string"
+      ? config.agents.defaults.model.primary.trim()
+      : "";
+  if (modelPrimary.includes("/")) {
+    const candidate = modelPrimary.split("/")[0]?.trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const managedProfiles = isPlainObject(config?.auth?.profiles) ? config.auth.profiles : {};
+  const profileId = Object.keys(managedProfiles).find((entry) => entry.endsWith(":default"));
+  if (profileId) {
+    return profileId.split(":")[0];
+  }
+
+  const providers = isPlainObject(config?.models?.providers) ? Object.keys(config.models.providers) : [];
+  return providers[0] || "";
+}
+
+function resolveCommerceRequiredModelIds(baseModelIds = []) {
+  const values = new Set();
+  const push = (candidate) => {
+    const normalized = normalizeConcreteManagedModelId(candidate);
+    if (normalized) {
+      values.add(normalized);
+    }
+  };
+
+  for (const candidate of baseModelIds) {
+    push(candidate);
+  }
+  for (const blueprint of COMMERCE_AGENT_BLUEPRINTS) {
+    push(blueprint.defaultModelId);
+    for (const fallbackModelId of blueprint.fallbackModelIds ?? []) {
+      push(fallbackModelId);
+    }
+  }
+
+  return Array.from(values);
+}
+
+function resolveLocalManagedProviderContext(runtimeStatus = null) {
+  const binding = readLocalBindingState();
+  const config = readJsonFile(LOCAL_OPENCLAW_CONFIG_PATH);
+  const authStore = readLocalOpenClawAuthStore();
+
+  if (!isPlainObject(config)) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 配置不存在，无法初始化电商团队。",
+    };
+  }
+
+  const managedProviderIds = resolveManagedProviderIds(binding);
+  const managedProfileIds = resolveManagedProfileIds(binding);
+  const providerId = managedProviderIds[0] || resolveManagedProviderIdFromConfig(config) || "openai";
+  const providerConfig = isPlainObject(config?.models?.providers?.[providerId])
+    ? config.models.providers[providerId]
+    : {};
+  const authProfiles = isPlainObject(authStore?.profiles) ? authStore.profiles : {};
+  const authProfileIdCandidates = Array.from(
+    new Set(
+      [`${providerId}:default`, ...managedProfileIds]
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+
+  let apiKey = "";
+  for (const profileId of authProfileIdCandidates) {
+    const profile = authProfiles[profileId];
+    if (isPlainObject(profile) && typeof profile.key === "string" && profile.key.trim()) {
+      apiKey = profile.key.trim();
+      break;
+    }
+  }
+
+  if (!apiKey && typeof providerConfig.apiKey === "string" && providerConfig.apiKey.trim()) {
+    apiKey = providerConfig.apiKey.trim();
+  }
+
+  const configModels = Array.isArray(providerConfig.models)
+    ? providerConfig.models.map((entry) => entry?.id)
+    : [];
+  const inferredDefaultModelId =
+    extractConcreteManagedModelIdFromSessionStore(config) ||
+    extractConcreteManagedModelIdFromConfig(config, providerId) ||
+    normalizeConcreteManagedModelId(configModels[0]) ||
+    "gpt-5.2";
+  const requiredModelIds = resolveCommerceRequiredModelIds(configModels);
+  const allowedModelIds = normalizeManagedModelIdList(requiredModelIds, {
+    primaryModelId: inferredDefaultModelId,
+    fallbackModelId: inferredDefaultModelId,
+    existingConfig: config,
+    providerId,
+  });
+  const gatewayToken =
+    typeof config?.gateway?.auth?.token === "string" ? config.gateway.auth.token.trim() : "";
+  const dashboardUrl =
+    runtimeStatus?.dashboardUrl ||
+    (gatewayToken
+      ? `http://127.0.0.1:${LOCAL_DEFAULT_DASHBOARD_PORT}/#token=${gatewayToken}`
+      : `http://127.0.0.1:${LOCAL_DEFAULT_DASHBOARD_PORT}`);
+  const baseUrl =
+    typeof binding?.baseUrl === "string" && binding.baseUrl.trim()
+      ? binding.baseUrl.trim()
+      : typeof providerConfig.baseUrl === "string" && providerConfig.baseUrl.trim()
+        ? providerConfig.baseUrl.trim()
+        : "";
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 当前没有可用的网关 API Key，请先同步本地 API Key。",
+    };
+  }
+
+  return {
+    ok: true,
+    binding,
+    config,
+    authStore,
+    providerId,
+    apiKey,
+    baseUrl,
+    gatewayToken,
+    dashboardUrl,
+    defaultModelId: inferredDefaultModelId,
+    allowedModelIds,
+    requiredModelIds: resolveCommerceRequiredModelIds(allowedModelIds),
+    managedProviderIds,
+    managedProfileIds: authProfileIdCandidates,
+  };
+}
+
+function findPluginRecordInPayload(payload, pluginId) {
+  if (!payload) {
+    return null;
+  }
+
+  if (Array.isArray(payload)) {
+    for (const entry of payload) {
+      const match = findPluginRecordInPayload(entry, pluginId);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  if (!isPlainObject(payload)) {
+    return null;
+  }
+
+  const identifiers = [
+    payload.id,
+    payload.pluginId,
+    payload.name,
+    payload.manifestId,
+  ]
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+  if (identifiers.includes(pluginId)) {
+    return payload;
+  }
+
+  for (const value of Object.values(payload)) {
+    const match = findPluginRecordInPayload(value, pluginId);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+async function inspectLocalOpenClawPlugin(pluginId = COMMERCE_PLUGIN_ID) {
+  const result = await tryRunLocalOpenClawGatewayCommand(["plugins", "list", "--json"]);
+  if (!result?.ok) {
+    return {
+      ok: false,
+      error: result?.error || "failed to list local plugins",
+      present: false,
+      enabled: false,
+    };
+  }
+
+  const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  if (!stdout) {
+    return {
+      ok: false,
+      error: "local plugin list returned empty output",
+      present: false,
+      enabled: false,
+    };
+  }
+
+  try {
+    const payload = JSON.parse(stdout);
+    const record = findPluginRecordInPayload(payload, pluginId);
+    return {
+      ok: true,
+      present: Boolean(record),
+      enabled: record ? record.enabled !== false : false,
+      record,
+    };
+  } catch {
+    const present = stdout.includes(pluginId);
+    return {
+      ok: true,
+      present,
+      enabled: present,
+      record: null,
+    };
+  }
+}
+
+function buildCommerceAgentAuthStore(context) {
+  const store = {
+    version: 1,
+    profiles: {},
+    lastGood: {},
+    usageStats: {},
+  };
+  const sourceProfiles = isPlainObject(context?.authStore?.profiles) ? context.authStore.profiles : {};
+
+  for (const profileId of context?.managedProfileIds ?? []) {
+    const sourceProfile = sourceProfiles[profileId];
+    if (
+      isPlainObject(sourceProfile) &&
+      typeof sourceProfile.key === "string" &&
+      sourceProfile.key.trim()
+    ) {
+      store.profiles[profileId] = {
+        type: "api_key",
+        provider:
+          typeof sourceProfile.provider === "string" && sourceProfile.provider.trim()
+            ? sourceProfile.provider.trim()
+            : context.providerId,
+        key: sourceProfile.key.trim(),
+      };
+    }
+  }
+
+  if (!isPlainObject(store.profiles[`${context.providerId}:default`])) {
+    store.profiles[`${context.providerId}:default`] = {
+      type: "api_key",
+      provider: context.providerId,
+      key: context.apiKey,
+    };
+  }
+
+  store.lastGood[context.providerId] = `${context.providerId}:default`;
+  return store;
+}
+
+function ensureCommerceAgentAuthStores(agentDefinitions, context) {
+  const nextStore = buildCommerceAgentAuthStore(context);
+  let changed = false;
+
+  for (const agent of agentDefinitions) {
+    const authStorePath = path.join(agent.agentDir, "auth-profiles.json");
+    if (writeJsonFileIfChanged(authStorePath, nextStore)) {
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function ensureLocalCommerceManagedFiles(agentDefinitions) {
+  let changed = false;
+  ensureDirectory(LOCAL_COMMERCE_RUNS_DIR);
+
+  for (const agent of agentDefinitions) {
+    const managedFiles = buildAgentManagedFiles(agent);
+    for (const [relativePath, fileContent] of Object.entries(managedFiles)) {
+      const absolutePath = path.join(agent.workspace, relativePath);
+      const normalizedContent =
+        typeof fileContent === "string" && fileContent.endsWith("\n")
+          ? fileContent
+          : `${String(fileContent ?? "")}\n`;
+      if (writeTextFileIfChanged(absolutePath, normalizedContent)) {
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+function ensureLocalCommerceConfig(context, agentDefinitions) {
+  const nextConfig = isPlainObject(context?.config)
+    ? JSON.parse(JSON.stringify(context.config))
+    : {};
+
+  nextConfig.meta = isPlainObject(nextConfig.meta) ? nextConfig.meta : {};
+  if (Object.prototype.hasOwnProperty.call(nextConfig.meta, "xiaolanbuCommerceTeamVersion")) {
+    delete nextConfig.meta.xiaolanbuCommerceTeamVersion;
+  }
+  if (Object.keys(nextConfig.meta).length === 0) {
+    delete nextConfig.meta;
+  }
+
+  nextConfig.plugins = isPlainObject(nextConfig.plugins) ? nextConfig.plugins : {};
+  nextConfig.plugins.entries = isPlainObject(nextConfig.plugins.entries) ? nextConfig.plugins.entries : {};
+  const existingPluginEntry = isPlainObject(nextConfig.plugins.entries[COMMERCE_PLUGIN_ID])
+    ? nextConfig.plugins.entries[COMMERCE_PLUGIN_ID]
+    : {};
+  nextConfig.plugins.entries[COMMERCE_PLUGIN_ID] = {
+    ...existingPluginEntry,
+    enabled: true,
+  };
+
+  nextConfig.models = isPlainObject(nextConfig.models) ? nextConfig.models : {};
+  nextConfig.models.providers = isPlainObject(nextConfig.models.providers) ? nextConfig.models.providers : {};
+  const currentProviderConfig = isPlainObject(nextConfig.models.providers[context.providerId])
+    ? { ...nextConfig.models.providers[context.providerId] }
+    : {};
+  currentProviderConfig.api = "openai-completions";
+  currentProviderConfig.apiKey = context.apiKey;
+  if (context.baseUrl) {
+    currentProviderConfig.baseUrl = context.baseUrl;
+  }
+  const currentProviderModels = Array.isArray(currentProviderConfig.models)
+    ? currentProviderConfig.models.map((entry) => (isPlainObject(entry) ? { ...entry } : entry))
+    : [];
+  const seenModelIds = new Set(
+    currentProviderModels
+      .map((entry) => normalizeConcreteManagedModelId(entry?.id))
+      .filter(Boolean),
+  );
+  for (const modelId of context.requiredModelIds) {
+    if (!seenModelIds.has(modelId)) {
+      currentProviderModels.push({
+        id: modelId,
+        name: `${modelId} (Xiaolanbu Managed)`,
+        input: ["text", "image"],
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+      });
+      seenModelIds.add(modelId);
+    }
+  }
+  for (const entry of currentProviderModels) {
+    if (isPlainObject(entry) && typeof entry.id === "string" && entry.id.trim()) {
+      applyManagedModelCompat(entry, entry.id.trim());
+      entry.input = Array.isArray(entry.input) ? Array.from(new Set([...entry.input, "text", "image"])) : ["text", "image"];
+      entry.cost = isPlainObject(entry.cost) ? entry.cost : {};
+      entry.cost.input = Number(entry.cost.input || 0);
+      entry.cost.output = Number(entry.cost.output || 0);
+      entry.cost.cacheRead = Number(entry.cost.cacheRead || 0);
+      entry.cost.cacheWrite = Number(entry.cost.cacheWrite || 0);
+    }
+  }
+  currentProviderConfig.models = currentProviderModels;
+  nextConfig.models.providers[context.providerId] = currentProviderConfig;
+
+  nextConfig.auth = isPlainObject(nextConfig.auth) ? nextConfig.auth : {};
+  nextConfig.auth.profiles = isPlainObject(nextConfig.auth.profiles) ? nextConfig.auth.profiles : {};
+  nextConfig.auth.profiles[`${context.providerId}:default`] = {
+    provider: context.providerId,
+    mode: "api_key",
+  };
+
+  nextConfig.agents = isPlainObject(nextConfig.agents) ? nextConfig.agents : {};
+  nextConfig.agents.defaults = isPlainObject(nextConfig.agents.defaults) ? nextConfig.agents.defaults : {};
+  nextConfig.agents.defaults.models = isPlainObject(nextConfig.agents.defaults.models)
+    ? nextConfig.agents.defaults.models
+    : {};
+  for (const modelId of context.requiredModelIds) {
+    const modelRef = `${context.providerId}/${modelId}`;
+    nextConfig.agents.defaults.models[modelRef] = isPlainObject(
+      nextConfig.agents.defaults.models[modelRef],
+    )
+      ? nextConfig.agents.defaults.models[modelRef]
+      : {};
+  }
+
+  const existingList = Array.isArray(nextConfig.agents.list) ? [...nextConfig.agents.list] : [];
+  for (const agent of agentDefinitions) {
+    const existingIndex = existingList.findIndex(
+      (entry) => isPlainObject(entry) && entry.id === agent.id,
+    );
+    const nextAgent = existingIndex >= 0 && isPlainObject(existingList[existingIndex])
+      ? { ...existingList[existingIndex] }
+      : { id: agent.id };
+    nextAgent.id = agent.id;
+    nextAgent.name = agent.label;
+    nextAgent.workspace = agent.workspace;
+    nextAgent.agentDir = agent.agentDir;
+    nextAgent.default = false;
+    nextAgent.model = {
+      primary: `${context.providerId}/${agent.defaultModelId}`,
+      fallbacks: Array.from(
+        new Set(
+          (agent.fallbackModelIds ?? [])
+            .map((entry) => normalizeConcreteManagedModelId(entry))
+            .filter(Boolean)
+            .map((entry) => `${context.providerId}/${entry}`),
+        ),
+      ),
+    };
+
+    if (existingIndex >= 0) {
+      existingList[existingIndex] = nextAgent;
+    } else {
+      existingList.push(nextAgent);
+    }
+  }
+  nextConfig.agents.list = existingList;
+
+  const changed = writeJsonFileIfChanged(LOCAL_OPENCLAW_CONFIG_PATH, nextConfig);
+  return {
+    changed,
+    config: nextConfig,
+  };
+}
+
+function ensureLocalCommerceManifest(context, agentDefinitions) {
+  const manifest = {
+    version: COMMERCE_TEAM_VERSION,
+    providerId: context?.providerId || "",
+    defaultModelId: context?.defaultModelId || "",
+    generatedAt: new Date().toISOString(),
+    agents: agentDefinitions.map((agent) => ({
+      id: agent.id,
+      label: agent.label,
+      workspace: agent.workspace,
+      agentDir: agent.agentDir,
+      defaultModelId: agent.defaultModelId,
+      availability: agent.availability,
+    })),
+  };
+
+  return writeJsonFileIfChanged(LOCAL_COMMERCE_MANIFEST_PATH, manifest);
+}
+
+async function ensureLocalCommerceTeam() {
+  const runtimeStatus = await getLocalOpenClawStatus();
+  if (!runtimeStatus?.installed) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有安装完成，电商多 Agent 目前只支持本地 OpenClaw。",
+    };
+  }
+
+  sanitizeLegacyLocalCommerceConfigMarker();
+  const pluginInfo = await inspectLocalOpenClawPlugin(COMMERCE_PLUGIN_ID);
+  if (!pluginInfo.ok) {
+    return {
+      ok: false,
+      error: `无法检查本地 open-prose 插件状态：${pluginInfo.error}`,
+    };
+  }
+  if (!pluginInfo.present) {
+    return {
+      ok: false,
+      error: "当前本地 OpenClaw 缺少 open-prose 插件，电商工作流无法启用。请先修复本地运行时。",
+    };
+  }
+
+  const providerContext = resolveLocalManagedProviderContext(runtimeStatus);
+  if (!providerContext.ok) {
+    return providerContext;
+  }
+
+  const agentDefinitions = listCommerceRuntimeAgents();
+  const filesChanged = ensureLocalCommerceManagedFiles(agentDefinitions);
+  const authChanged = ensureCommerceAgentAuthStores(agentDefinitions, providerContext);
+  const configResult = ensureLocalCommerceConfig(providerContext, agentDefinitions);
+  const manifestChanged = ensureLocalCommerceManifest(providerContext, agentDefinitions);
+
+  let restartResult = null;
+  const shouldRestart =
+    configResult.changed ||
+    filesChanged ||
+    authChanged ||
+    manifestChanged ||
+    !runtimeStatus.ready ||
+    !runtimeStatus.dashboardPortOpen ||
+    !runtimeStatus.browserControlPortOpen;
+
+  if (shouldRestart) {
+    restartResult = await restartLocalOpenClawGatewayService(
+      configResult.changed || filesChanged || authChanged || manifestChanged
+        ? "commerce-team"
+        : "commerce-team-start",
+    );
+    if (!restartResult.ok) {
+      return {
+        ok: false,
+        error: restartResult.error || "本地 OpenClaw 重启失败，电商团队尚未完成初始化。",
+      };
+    }
+  }
+
+  const stableStatus = shouldRestart
+    ? await waitForStableLocalOpenClawStatus({
+        timeoutMs: 12000,
+        requireReady: true,
+        requireAuth: true,
+      })
+    : await getLocalOpenClawStatus();
+
+  if (!stableStatus.ready) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有完全就绪，请稍后再试。",
+    };
+  }
+  if (!stableStatus.localApiKeyConfigured) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有同步到可用的网关 API Key，请先同步本地 API Key。",
+    };
+  }
+
+  return {
+    ok: true,
+    changed: Boolean(configResult.changed || filesChanged || authChanged || manifestChanged),
+    restarted: Boolean(restartResult),
+    status: stableStatus,
+    dashboardUrl: stableStatus.dashboardUrl || providerContext.dashboardUrl,
+    providerId: providerContext.providerId,
+    defaultModelId: providerContext.defaultModelId,
+    allowedModelIds: providerContext.requiredModelIds,
+    agents: agentDefinitions.map((entry) => buildPublicCommerceAgent(entry)),
+    workflows: COMMERCE_WORKFLOW_DEFINITIONS.map((entry) => buildPublicCommerceWorkflow(entry)),
+    plugin: {
+      id: COMMERCE_PLUGIN_ID,
+      present: true,
+      enabled: true,
+    },
+  };
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  return value
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeCommerceBriefInput(payload, workflow) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const targetAgentId =
+    normalizeCommerceIdentifier(source.targetAgentId, "") || workflow.targetAgentId;
+  return {
+    workflowId: workflow.id,
+    targetAgentId,
+    platform: typeof source.platform === "string" ? source.platform.trim() : "",
+    storeName: typeof source.storeName === "string" ? source.storeName.trim() : "",
+    productName: typeof source.productName === "string" ? source.productName.trim() : "",
+    category: typeof source.category === "string" ? source.category.trim() : "",
+    targetAudience:
+      typeof source.targetAudience === "string" ? source.targetAudience.trim() : "",
+    price: typeof source.price === "string" ? source.price.trim() : "",
+    sellingPoints: normalizeStringList(source.sellingPoints),
+    constraints: typeof source.constraints === "string" ? source.constraints.trim() : "",
+    channels: normalizeStringList(source.channels),
+    assets: normalizeStringList(source.assets),
+    outputLanguage:
+      typeof source.outputLanguage === "string" && source.outputLanguage.trim()
+        ? source.outputLanguage.trim()
+        : "zh-CN",
+  };
+}
+
+function formatCommerceBriefMarkdown(brief, workflow) {
+  const lines = [
+    `# ${workflow.label} Brief`,
+    "",
+    `- workflowId: ${brief.workflowId}`,
+    `- targetAgentId: ${brief.targetAgentId}`,
+    `- platform: ${brief.platform || "未填写"}`,
+    `- storeName: ${brief.storeName || "未填写"}`,
+    `- productName: ${brief.productName || "未填写"}`,
+    `- category: ${brief.category || "未填写"}`,
+    `- targetAudience: ${brief.targetAudience || "未填写"}`,
+    `- price: ${brief.price || "未填写"}`,
+    `- outputLanguage: ${brief.outputLanguage || "zh-CN"}`,
+    "",
+    "## Selling Points",
+    "",
+    ...(brief.sellingPoints.length > 0 ? brief.sellingPoints.map((entry) => `- ${entry}`) : ["- 未填写"]),
+    "",
+    "## Channels",
+    "",
+    ...(brief.channels.length > 0 ? brief.channels.map((entry) => `- ${entry}`) : ["- 未填写"]),
+    "",
+    "## Assets",
+    "",
+    ...(brief.assets.length > 0 ? brief.assets.map((entry) => `- ${entry}`) : ["- 未填写"]),
+    "",
+    "## Constraints",
+    "",
+    brief.constraints || "未填写",
+    "",
+  ];
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function extractPlainTextFromGatewayMessage(message) {
+  const chunks = [];
+  const append = (value) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return;
+    }
+    chunks.push(normalized);
+  };
+
+  const visit = (value) => {
+    if (!value) {
+      return;
+    }
+    if (typeof value === "string") {
+      append(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item);
+      }
+      return;
+    }
+    if (!isPlainObject(value)) {
+      return;
+    }
+
+    if (typeof value.text === "string") {
+      append(value.text);
+    }
+    if (isPlainObject(value.text) && typeof value.text.value === "string") {
+      append(value.text.value);
+    }
+    if (typeof value.value === "string" && value.type === "text") {
+      append(value.value);
+    }
+    if (typeof value.output_text === "string") {
+      append(value.output_text);
+    }
+    if (typeof value.input_text === "string") {
+      append(value.input_text);
+    }
+
+    if (Array.isArray(value.content)) {
+      visit(value.content);
+    }
+    if (Array.isArray(value.parts)) {
+      visit(value.parts);
+    }
+    if (Array.isArray(value.output)) {
+      visit(value.output);
+    }
+    if (Array.isArray(value.items)) {
+      visit(value.items);
+    }
+  };
+
+  visit(message);
+  return Array.from(new Set(chunks)).join("\n\n").trim();
+}
+
+function findLatestAssistantMessage(messages) {
+  const items = Array.isArray(messages) ? messages : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const message = items[index];
+    if (
+      isPlainObject(message) &&
+      typeof message.role === "string" &&
+      message.role.trim().toLowerCase() === "assistant"
+    ) {
+      return message;
+    }
+  }
+  return null;
+}
+
+function buildCommerceRunArtifacts(outputDir) {
+  return [
+    {
+      id: "brief-markdown",
+      label: "任务 Brief",
+      type: "markdown",
+      path: path.join(outputDir, "brief.md"),
+    },
+    {
+      id: "summary-markdown",
+      label: "运行汇总",
+      type: "markdown",
+      path: path.join(outputDir, "summary.md"),
+    },
+    {
+      id: "result-json",
+      label: "原始结果",
+      type: "json",
+      path: path.join(outputDir, "result.json"),
+    },
+    {
+      id: "history-json",
+      label: "会话记录",
+      type: "json",
+      path: path.join(outputDir, "history.json"),
+    },
+  ];
+}
+
+function loadCommerceRunRecordFromDir(runDir, options = {}) {
+  const runPath = path.join(runDir, "run.json");
+  const run = readJsonFile(runPath);
+  if (!isPlainObject(run)) {
+    return null;
+  }
+
+  const activeState = readCommerceActiveRunsState();
+  const activeEntry = isPlainObject(activeState.runs[run.id]) ? activeState.runs[run.id] : null;
+  let normalizedRun = run;
+
+  if (
+    normalizedRun.status === "running" &&
+    (!activeEntry || !isProcessAlive(activeEntry.pid))
+  ) {
+    normalizedRun = {
+      ...normalizedRun,
+      status: "failed",
+      finishedAt:
+        typeof normalizedRun.finishedAt === "string" && normalizedRun.finishedAt
+          ? normalizedRun.finishedAt
+          : new Date().toISOString(),
+      error:
+        typeof normalizedRun.error === "string" && normalizedRun.error
+          ? normalizedRun.error
+          : "workflow interrupted before completion",
+    };
+    writeJsonFileIfChanged(runPath, normalizedRun);
+    if (activeEntry) {
+      delete activeState.runs[run.id];
+      writeCommerceActiveRunsState(activeState);
+    }
+  }
+
+  const record = {
+    ...normalizedRun,
+    outputDir: runDir,
+    artifacts: Array.isArray(normalizedRun.artifacts)
+      ? normalizedRun.artifacts
+      : buildCommerceRunArtifacts(runDir),
+  };
+
+  if (options.includeText === true) {
+    record.summaryText = readTextFileIfExists(path.join(runDir, "summary.md"));
+    record.briefMarkdown = readTextFileIfExists(path.join(runDir, "brief.md"));
+  }
+
+  return record;
+}
+
+function findCommerceRunDirectory(runId) {
+  if (!runId || !fs.existsSync(LOCAL_COMMERCE_RUNS_DIR)) {
+    return "";
+  }
+
+  const entries = fs.readdirSync(LOCAL_COMMERCE_RUNS_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const runDir = path.join(LOCAL_COMMERCE_RUNS_DIR, entry.name);
+    const record = loadCommerceRunRecordFromDir(runDir);
+    if (record?.id === runId) {
+      return runDir;
+    }
+  }
+
+  return "";
+}
+
+function listCommerceRuns() {
+  if (!fs.existsSync(LOCAL_COMMERCE_RUNS_DIR)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(LOCAL_COMMERCE_RUNS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => loadCommerceRunRecordFromDir(path.join(LOCAL_COMMERCE_RUNS_DIR, entry.name)))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const rightTs = Date.parse(right?.startedAt || right?.finishedAt || 0) || 0;
+      const leftTs = Date.parse(left?.startedAt || left?.finishedAt || 0) || 0;
+      return rightTs - leftTs;
+    });
+}
+
+async function runLocalGatewayChatTask(params) {
+  const dashboardUrl =
+    typeof params?.dashboardUrl === "string" && params.dashboardUrl.trim()
+      ? params.dashboardUrl.trim()
+      : "";
+  const sessionKey =
+    typeof params?.sessionKey === "string" && params.sessionKey.trim()
+      ? params.sessionKey.trim()
+      : "main";
+  const message = typeof params?.message === "string" ? params.message.trim() : "";
+  const timeoutMs =
+    Number.isFinite(params?.timeoutMs) && params.timeoutMs > 0
+      ? Math.min(Math.trunc(params.timeoutMs), 600000)
+      : 300000;
+
+  if (!dashboardUrl || !message) {
+    return {
+      ok: false,
+      error: "missing workflow chat params",
+      payload: null,
+      runId: "",
+    };
+  }
+
+  const handle = await acquireCachedLocalGatewayRpcClient({
+    dashboardUrl,
+  });
+  const { client } = handle;
+  const runId = createGatewayRequestId();
+
+  try {
+    let unsubscribe = () => {};
+    let timer = null;
+    const terminalPayloadPromise = new Promise((resolve, reject) => {
+      timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("workflow run timeout"));
+      }, timeoutMs);
+
+      unsubscribe = client.onChatEvent((payload) => {
+        const eventPayload = isPlainObject(payload) ? payload : null;
+        if (!eventPayload) {
+          return;
+        }
+        if (
+          typeof eventPayload.sessionKey === "string" &&
+          eventPayload.sessionKey.trim() &&
+          eventPayload.sessionKey.trim() !== sessionKey
+        ) {
+          return;
+        }
+        if (
+          typeof eventPayload.runId === "string" &&
+          eventPayload.runId.trim() &&
+          eventPayload.runId.trim() !== runId
+        ) {
+          return;
+        }
+        if (eventPayload.state === "delta") {
+          return;
+        }
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(eventPayload);
+      });
+    });
+
+    try {
+      await client.request("chat.send", {
+        sessionKey,
+        message,
+        deliver: false,
+        idempotencyKey: runId,
+      });
+    } catch (error) {
+      clearTimeout(timer);
+      unsubscribe();
+      throw error;
+    }
+
+    const payload = await terminalPayloadPromise;
+    if (payload?.state === "final") {
+      return {
+        ok: true,
+        payload,
+        runId,
+      };
+    }
+    return {
+      ok: false,
+      payload,
+      runId,
+      error:
+        typeof payload?.errorMessage === "string" && payload.errorMessage.trim()
+          ? payload.errorMessage.trim()
+          : payload?.state === "aborted"
+            ? "workflow aborted"
+            : "workflow failed",
+    };
+  } catch (error) {
+    handle.invalidate();
+    return {
+      ok: false,
+      payload: null,
+      runId,
+      error: error instanceof Error ? error.message : "workflow run failed",
+    };
+  } finally {
+    handle.release();
+  }
+}
+
+function truncateCommercePromptSection(value, maxLength = 6000) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    return "";
+  }
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength).trimEnd()}\n\n[truncated]`;
+}
+
+function formatCommerceCompletedStepsForPrompt(completedSteps) {
+  const items = Array.isArray(completedSteps) ? completedSteps : [];
+  if (items.length === 0) {
+    return "暂无上游产物。";
+  }
+
+  return items
+    .map((step) => {
+      const outputText = truncateCommercePromptSection(step?.outputText, 5000) || "无可用输出。";
+      return [
+        `### ${step?.label || step?.id || "步骤"} (${step?.agentId || "unknown-agent"})`,
+        "",
+        outputText,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+function buildCommerceWorkflowTaskPrompt({
+  workflow,
+  step,
+  businessMarkdown,
+  briefMarkdown,
+  completedSteps,
+}) {
+  const instruction =
+    typeof step?.instructions === "string" && step.instructions.trim()
+      ? step.instructions.trim()
+      : "请根据 brief 给出可执行结果。";
+
+  return [
+    `你正在执行「${workflow.label}」工作流。`,
+    `当前负责步骤：${step.label}`,
+    `当前部门 Agent：${step.agentId}`,
+    "",
+    "本条消息已经包含你需要的业务背景、brief 和上游产物。",
+    "不要再调用工具读取文件；直接基于下面内容完成任务。",
+    "如果下面附带了上游产物，要把它们视为已确定输入，不要擅自忽略。",
+    "输出要求：中文 Markdown，直接给结果，不要寒暄，不要解释你会怎么做。",
+    "",
+    "## 业务背景",
+    "",
+    truncateCommercePromptSection(businessMarkdown, 6000) || "暂无长期业务背景。",
+    "",
+    "## 当前 Brief",
+    "",
+    truncateCommercePromptSection(briefMarkdown, 8000) || "未提供",
+    "",
+    "## 上游产物",
+    "",
+    formatCommerceCompletedStepsForPrompt(completedSteps),
+    "",
+    "## 本步骤要求",
+    "",
+    instruction,
+    "",
+    "交付内容要自包含，方便下一个部门或 CEO 直接接手。",
+    "",
+  ].join("\n");
+}
+
+function buildCommerceWorkflowPlan(workflow) {
+  switch (workflow.id) {
+    case "launch-chain":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "product-selection-analysis",
+              label: "选品判断",
+              agentId: "product-selection-dept",
+              instructions: [
+                "输出一个上新判断包，必须包含以下小节：",
+                "## 是否值得上新",
+                "## 目标人群与使用场景",
+                "## 竞品对位与差异化",
+                "## 核心卖点排序",
+                "## 风险点与验证动作",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "content-package",
+              label: "内容方案",
+              agentId: "content-dept",
+              instructions: [
+                "基于 brief 和上游选品结论，输出内容方案包，必须包含：",
+                "## 商品标题候选",
+                "## 核心卖点 bullet",
+                "## 详情页结构",
+                "## 短视频脚本",
+                "## 直播高频话术",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "marketing-plan",
+              label: "投放方案",
+              agentId: "marketing-dept",
+              instructions: [
+                "基于 brief 和上游产物，输出投放方案，必须包含：",
+                "## 渠道分工",
+                "## 投放创意方向",
+                "## 素材清单",
+                "## 首周测试矩阵",
+                "## 节奏建议",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "customer-service-playbook",
+              label: "客服策略",
+              agentId: "customer-service-dept",
+              instructions: [
+                "基于 brief 和上游产物，输出客服作战包，必须包含：",
+                "## 售前 FAQ",
+                "## 异议处理话术",
+                "## 售后风险提醒",
+                "## 质检口径",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "ceo-launch-memo",
+              label: "CEO 汇总",
+              agentId: "commerce-ceo",
+              instructions: [
+                "整合所有部门产物，输出最终上新作战包，必须包含：",
+                "## 项目目标",
+                "## 商品定位",
+                "## 内容方案",
+                "## 投放方案",
+                "## 客服策略",
+                "## 首周执行清单",
+                "## 风险与回滚点",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
+    case "campaign-plan":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "ops-plan",
+              label: "运营节奏",
+              agentId: "ops-dept",
+              instructions: [
+                "输出活动运营方案，必须包含：",
+                "## 活动目标",
+                "## 节奏安排",
+                "## 优惠与权益设计",
+                "## 货品与页面配合",
+                "## 执行 checklist",
+              ].join("\n"),
+            },
+            {
+              id: "media-plan",
+              label: "投放与渠道",
+              agentId: "marketing-dept",
+              instructions: [
+                "输出投放与渠道方案，必须包含：",
+                "## 渠道优先级",
+                "## 创意方向",
+                "## 预算分配建议",
+                "## 测试顺序",
+                "## 数据观察点",
+              ].join("\n"),
+            },
+            {
+              id: "finance-guardrails",
+              label: "财务边界",
+              agentId: "finance-dept",
+              instructions: [
+                "输出财务边界，必须包含：",
+                "## 毛利与投产底线",
+                "## 折扣与补贴边界",
+                "## 亏损预警指标",
+                "## ROI 观察口径",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "ceo-campaign-memo",
+              label: "CEO 汇总",
+              agentId: "commerce-ceo",
+              instructions: [
+                "整合运营、投放、财务三方意见，输出最终活动备忘录，必须包含：",
+                "## Objective",
+                "## Offer Design",
+                "## Traffic Plan",
+                "## Financial Boundaries",
+                "## Execution Calendar",
+                "## Escalation Rules",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
+    case "customer-service-optimization":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "service-diagnosis",
+              label: "客服诊断",
+              agentId: "customer-service-dept",
+              instructions: [
+                "输出客服诊断结论，必须包含：",
+                "## 当前主要问题",
+                "## 售前优化点",
+                "## 售后优化点",
+                "## 质检与培训建议",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "service-finance-impact",
+              label: "财务影响",
+              agentId: "finance-dept",
+              instructions: [
+                "基于客服诊断，输出财务影响分析，必须包含：",
+                "## 成本影响",
+                "## 退款/赔付风险",
+                "## 优先治理项",
+                "## 观测指标",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "service-ops-fix",
+              label: "运营修复",
+              agentId: "ops-dept",
+              instructions: [
+                "结合客服与财务结论，输出运营修复方案，必须包含：",
+                "## 流程改造",
+                "## 页面与规则调整",
+                "## 负责人分工",
+                "## 两周执行计划",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "ceo-service-memo",
+              label: "CEO 汇总",
+              agentId: "commerce-ceo",
+              instructions: [
+                "整合上游产物，输出客服优化 memo，必须包含：",
+                "## 诊断结论",
+                "## 财务影响",
+                "## 运营修复动作",
+                "## 优先级排序",
+                "## 验收指标",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
+    case "content-sprint":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "content-sprint-pack",
+              label: "内容冲刺包",
+              agentId: "content-dept",
+              instructions: [
+                "扮演内容部内部的商品文案、短视频脚本、直播话术三个岗位，一次性输出完整内容包，必须包含：",
+                "## 商品标题候选",
+                "## 核心卖点",
+                "## 详情页结构",
+                "## 短视频脚本",
+                "## 直播成交话术",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
+    default:
+      return {
+        engine: "native-orchestrator",
+        stages: [],
+      };
+  }
+}
+
+async function executeCommerceWorkflowStep(params) {
+  const workflow = params?.workflow;
+  const step = params?.step;
+  const outputDir =
+    typeof params?.outputDir === "string" && params.outputDir.trim() ? params.outputDir.trim() : "";
+  const briefMarkdown =
+    typeof params?.briefMarkdown === "string" ? params.briefMarkdown : "";
+  const dashboardUrl =
+    typeof params?.dashboardUrl === "string" && params.dashboardUrl.trim()
+      ? params.dashboardUrl.trim()
+      : "";
+  const runId = typeof params?.runId === "string" ? params.runId.trim() : "";
+  const timeoutMs =
+    Number.isFinite(params?.timeoutMs) && params.timeoutMs > 0
+      ? Math.min(Math.trunc(params.timeoutMs), 600000)
+      : 180000;
+  const completedSteps = Array.isArray(params?.completedSteps) ? params.completedSteps : [];
+  const index = Number.isFinite(params?.index) ? Math.max(0, Math.trunc(params.index)) : 0;
+
+  const agent = findCommerceAgentDefinition(step?.agentId);
+  if (!workflow || !step || !agent || !outputDir || !dashboardUrl || !runId) {
+    return {
+      ok: false,
+      error: "invalid commerce workflow step params",
+      step: null,
+    };
+  }
+
+  const sessionKey = buildCommerceAgentSessionKey(
+    agent.id,
+    `workflow-${normalizeCommerceIdentifier(workflow.id, "workflow")}-${normalizeCommerceIdentifier(step.id, "step")}-${normalizeCommerceIdentifier(runId, "run")}`,
+  );
+  const businessMarkdown = readTextFileIfExists(path.join(agent.workspace, "BUSINESS.md"));
+  const prompt = buildCommerceWorkflowTaskPrompt({
+    workflow,
+    step,
+    businessMarkdown,
+    briefMarkdown,
+    completedSteps,
+  });
+  const startedAt = new Date().toISOString();
+  const taskResult = await runLocalGatewayChatTask({
+    dashboardUrl,
+    sessionKey,
+    message: prompt,
+    timeoutMs,
+  });
+  const history = await fetchGatewayChatHistory({
+    dashboardUrl,
+    sessionKey,
+    limit: 200,
+  }).catch(() => ({ ok: false, messages: [] }));
+  const latestAssistantMessage =
+    findLatestAssistantMessage(history?.messages) ||
+    (isPlainObject(taskResult?.payload?.message) ? taskResult.payload.message : null);
+  const outputText =
+    extractPlainTextFromGatewayMessage(latestAssistantMessage) ||
+    (typeof taskResult?.error === "string" && taskResult.error.trim()
+      ? taskResult.error.trim()
+      : "步骤已完成，但没有提取到可展示的文本结果。");
+  const finishedAt = new Date().toISOString();
+  const status = taskResult.ok ? "succeeded" : "failed";
+  const stepFilePath = path.join(
+    outputDir,
+    `${String(index + 1).padStart(2, "0")}-${normalizeCommerceIdentifier(step.id, "step")}.md`,
+  );
+  const stepMarkdown = [
+    `# ${step.label}`,
+    "",
+    `- workflowId: ${workflow.id}`,
+    `- agentId: ${agent.id}`,
+    `- sessionKey: ${sessionKey}`,
+    `- status: ${status}`,
+    `- startedAt: ${startedAt}`,
+    `- finishedAt: ${finishedAt}`,
+    "",
+    "## Result",
+    "",
+    outputText,
+    "",
+  ].join("\n");
+
+  writeTextFileIfChanged(stepFilePath, stepMarkdown);
+  writeTextFileIfChanged(
+    path.join(agent.workspace, "commerce", "project", `${workflow.id}-${normalizeCommerceIdentifier(step.id, "step")}.md`),
+    stepMarkdown,
+  );
+
+  return {
+    ok: taskResult.ok,
+    error: taskResult.ok ? "" : taskResult.error || `${step.label} failed`,
+    step: {
+      id: step.id,
+      label: step.label,
+      agentId: agent.id,
+      sessionKey,
+      status,
+      startedAt,
+      finishedAt,
+      outputText,
+      outputPath: stepFilePath,
+      history,
+      taskResult,
+      model:
+        typeof latestAssistantMessage?.model === "string" && latestAssistantMessage.model.trim()
+          ? latestAssistantMessage.model.trim()
+          : "",
+    },
+  };
+}
+
+async function openCommerceSession(payload) {
+  const runtimeStatus = await getLocalOpenClawStatus();
+  if (!runtimeStatus?.installed || !runtimeStatus?.ready) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有就绪，请先完成本地部署或修复。",
+    };
+  }
+  if (!runtimeStatus.localApiKeyConfigured) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有同步到可用的网关 API Key。",
+    };
+  }
+
+  const agent = findCommerceAgentDefinition(payload?.agentId || "commerce-ceo");
+  if (!agent) {
+    return {
+      ok: false,
+      error: "unknown commerce agent",
+    };
+  }
+
+  const sessionKey =
+    typeof payload?.sessionKey === "string" && payload.sessionKey.trim()
+      ? payload.sessionKey.trim()
+      : buildCommerceAgentSessionKey(agent.id);
+  const [history, sessions] = await Promise.all([
+    fetchGatewayChatHistory({
+      dashboardUrl: runtimeStatus.dashboardUrl,
+      sessionKey,
+      limit:
+        Number.isFinite(payload?.limit) && payload.limit > 0
+          ? Math.min(Math.trunc(payload.limit), 300)
+          : 200,
+    }),
+    fetchGatewaySessions({
+      dashboardUrl: runtimeStatus.dashboardUrl,
+      agentId: agent.id,
+      includeGlobal: false,
+      includeUnknown: true,
+      limit: 200,
+    }),
+  ]);
+
+  return {
+    ok: true,
+    agent: buildPublicCommerceAgent(agent),
+    sessionKey,
+    thinkingLevel: history?.thinkingLevel ?? null,
+    messages: Array.isArray(history?.messages) ? history.messages : [],
+    sessions: Array.isArray(sessions?.sessions) ? sessions.sessions : [],
+    defaults: isPlainObject(sessions?.defaults) ? sessions.defaults : {},
+    dashboardUrl: runtimeStatus.dashboardUrl,
+  };
+}
+
+async function runCommerceWorkflow(payload) {
+  const ensured = await ensureLocalCommerceTeam();
+  if (!ensured.ok) {
+    return ensured;
+  }
+
+  const workflow = findCommerceWorkflowDefinition(payload?.workflowId);
+  if (!workflow) {
+    return {
+      ok: false,
+      error: "unknown commerce workflow",
+    };
+  }
+  if (workflow.availability === "coming-soon") {
+    return {
+      ok: false,
+      error: "这个工作流会在 Phase 2 开放，当前版本只保留入口。",
+    };
+  }
+
+  const targetAgent = findCommerceAgentDefinition(payload?.targetAgentId || workflow.targetAgentId);
+  if (!targetAgent) {
+    return {
+      ok: false,
+      error: "workflow target agent not found",
+    };
+  }
+
+  const brief = normalizeCommerceBriefInput(payload, workflow);
+  const briefMarkdown = formatCommerceBriefMarkdown(brief, workflow);
+  const plan = buildCommerceWorkflowPlan(workflow);
+  if (!Array.isArray(plan.stages) || plan.stages.length === 0) {
+    return {
+      ok: false,
+      error: "workflow plan is not configured",
+    };
+  }
+  const runId = `commerce-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = new Date().toISOString();
+  const dirName = `${startedAt.replace(/[:.]/g, "-")}-${workflow.id}-${runId.split("-").pop()}`;
+  const outputDir = path.join(LOCAL_COMMERCE_RUNS_DIR, dirName);
+  const sessionKey = buildCommerceWorkflowSessionKey(targetAgent.id, workflow.id, runId);
+  const artifacts = buildCommerceRunArtifacts(outputDir);
+  const runRecord = {
+    id: runId,
+    workflowId: workflow.id,
+    workflowLabel: workflow.label,
+    targetAgentId: targetAgent.id,
+    status: "running",
+    sessionKey,
+    outputDir,
+    artifacts,
+    startedAt,
+    finishedAt: "",
+    engine: plan.engine,
+  };
+
+  ensureDirectory(outputDir);
+  const participatingAgentIds = Array.from(
+    new Set(
+      plan.stages
+        .flat()
+        .map((step) => (typeof step?.agentId === "string" ? step.agentId.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+  for (const agentId of participatingAgentIds) {
+    const agent = findCommerceAgentDefinition(agentId);
+    if (!agent) {
+      continue;
+    }
+    writeTextFileIfChanged(
+      path.join(agent.workspace, "commerce", "shared", "current-brief.md"),
+      briefMarkdown,
+    );
+  }
+  writeTextFileIfChanged(path.join(outputDir, "brief.md"), briefMarkdown);
+  writeJsonFileIfChanged(path.join(outputDir, "brief.json"), brief);
+  writeJsonFileIfChanged(path.join(outputDir, "run.json"), runRecord);
+  markCommerceRunActive(runId, {
+    startedAt,
+    workflowId: workflow.id,
+    sessionKey,
+  });
+
+  try {
+    const workflowTimeoutMs =
+      Number.isFinite(payload?.timeoutMs) && payload.timeoutMs > 0
+        ? Math.min(Math.trunc(payload.timeoutMs), 600000)
+        : 180000;
+    const completedSteps = [];
+    const stepArtifacts = [];
+    let workflowError = "";
+
+    for (const stage of plan.stages) {
+      const stageResults = await Promise.all(
+        stage.map((step, stageIndex) =>
+          executeCommerceWorkflowStep({
+            workflow,
+            step,
+            outputDir,
+            briefMarkdown,
+            dashboardUrl: ensured.dashboardUrl,
+            runId,
+            timeoutMs: workflowTimeoutMs,
+            completedSteps,
+            index: completedSteps.length + stageIndex,
+          }),
+        ),
+      );
+
+      for (const result of stageResults) {
+        if (!result?.step) {
+          workflowError = result?.error || "workflow step failed";
+          break;
+        }
+        completedSteps.push(result.step);
+        stepArtifacts.push({
+          id: `step-${normalizeCommerceIdentifier(result.step.id, "step")}`,
+          label: `步骤产物 · ${result.step.label}`,
+          type: "markdown",
+          path: result.step.outputPath,
+        });
+        if (!result.ok && !workflowError) {
+          workflowError = result.error || `${result.step.label} failed`;
+        }
+      }
+
+      writeJsonFileIfChanged(path.join(outputDir, "run.json"), {
+        ...runRecord,
+        artifacts: [...artifacts, ...stepArtifacts],
+        completedSteps: completedSteps.map((step) => ({
+          id: step.id,
+          label: step.label,
+          agentId: step.agentId,
+          status: step.status,
+          outputPath: step.outputPath,
+        })),
+      });
+
+      if (workflowError) {
+        break;
+      }
+    }
+
+    const finalStep = completedSteps[completedSteps.length - 1] ?? null;
+    const summaryText =
+      truncateCommercePromptSection(finalStep?.outputText, 20000) ||
+      (workflowError ? workflowError : "工作流运行完成，但没有提取到可展示的文本结果。");
+    const finishedAt = new Date().toISOString();
+    const finalStatus = workflowError ? "failed" : "succeeded";
+    const summaryMarkdown = [
+      `# ${workflow.label}`,
+      "",
+      `- status: ${finalStatus}`,
+      `- targetAgentId: ${targetAgent.id}`,
+      `- engine: ${plan.engine}`,
+      `- startedAt: ${startedAt}`,
+      `- finishedAt: ${finishedAt}`,
+      "",
+      "## Result",
+      "",
+      summaryText,
+      "",
+    ].join("\n");
+
+    writeTextFileIfChanged(path.join(outputDir, "summary.md"), summaryMarkdown);
+    writeJsonFileIfChanged(path.join(outputDir, "history.json"), {
+      steps: completedSteps.map((step) => ({
+        id: step.id,
+        label: step.label,
+        agentId: step.agentId,
+        sessionKey: step.sessionKey,
+        history: step.history,
+      })),
+    });
+    writeJsonFileIfChanged(path.join(outputDir, "result.json"), {
+      workflow,
+      brief,
+      plan,
+      steps: completedSteps.map((step) => ({
+        id: step.id,
+        label: step.label,
+        agentId: step.agentId,
+        sessionKey: step.sessionKey,
+        status: step.status,
+        outputPath: step.outputPath,
+        outputText: step.outputText,
+        model: step.model,
+        startedAt: step.startedAt,
+        finishedAt: step.finishedAt,
+        taskResult: step.taskResult,
+      })),
+      workflowError,
+    });
+    writeTextFileIfChanged(
+      path.join(targetAgent.workspace, "commerce", "project", `${workflow.id}-latest.md`),
+      summaryMarkdown,
+    );
+    if (targetAgent.id === "commerce-ceo") {
+      writeTextFileIfChanged(
+        path.join(targetAgent.workspace, "commerce", "project", "ceo-summary.md"),
+        summaryMarkdown,
+      );
+    }
+
+    const finalRunRecord = {
+      ...runRecord,
+      artifacts: [...artifacts, ...stepArtifacts],
+      status: finalStatus,
+      finishedAt,
+      error: workflowError,
+    };
+    writeJsonFileIfChanged(path.join(outputDir, "run.json"), finalRunRecord);
+
+    return {
+      ok: !workflowError,
+      error: workflowError,
+      run: {
+        ...finalRunRecord,
+        summaryText: summaryMarkdown,
+      },
+    };
+  } finally {
+    clearCommerceRunActive(runId);
+  }
+}
+
+async function getCommerceRun(payload) {
+  const runId = typeof payload?.runId === "string" ? payload.runId.trim() : "";
+  if (!runId) {
+    return {
+      ok: false,
+      error: "missing commerce run id",
+    };
+  }
+
+  const runDir = findCommerceRunDirectory(runId);
+  if (!runDir) {
+    return {
+      ok: false,
+      error: "commerce run not found",
+    };
+  }
+
+  const record = loadCommerceRunRecordFromDir(runDir, { includeText: true });
+  if (!record) {
+    return {
+      ok: false,
+      error: "commerce run metadata missing",
+    };
+  }
+
+  return {
+    ok: true,
+    run: record,
+  };
+}
+
+async function exportCommerceRun(payload) {
+  const result = await getCommerceRun(payload);
+  if (!result.ok) {
+    return result;
+  }
+
+  const run = result.run;
+  const content =
+    typeof run.summaryText === "string" && run.summaryText.trim()
+      ? run.summaryText
+      : readTextFileIfExists(path.join(run.outputDir, "summary.md"));
+  if (!content.trim()) {
+    return {
+      ok: false,
+      error: "commerce run summary is empty",
+    };
+  }
+
+  const exportResult = await dialog.showSaveDialog({
+    title: "导出电商工作流结果",
+    defaultPath: path.join(
+      app.getPath("downloads"),
+      `${run.workflowId || "commerce-run"}-${run.id || Date.now()}.md`,
+    ),
+    filters: [{ name: "Markdown", extensions: ["md"] }],
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+  });
+
+  if (exportResult.canceled || !exportResult.filePath) {
+    return {
+      ok: false,
+      canceled: true,
+      error: "export canceled",
+    };
+  }
+
+  fs.writeFileSync(exportResult.filePath, content, "utf8");
+  return {
+    ok: true,
+    filePath: exportResult.filePath,
+  };
+}
+
+async function openCommerceArtifact(payload) {
+  const targetPath =
+    typeof payload?.path === "string" && payload.path.trim() ? payload.path.trim() : "";
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return {
+      ok: false,
+      error: "artifact path not found",
+    };
+  }
+
+  const openError = await shell.openPath(targetPath);
+  return openError
+    ? {
+        ok: false,
+        error: openError,
+      }
+    : {
+        ok: true,
+      };
 }
 
 function createWindow() {
@@ -7588,6 +9534,13 @@ if (IS_DESKTOP_HELPER_MODE) {
       stopLocalOpenClaw,
       uninstallLocalOpenClaw,
       bootstrapLocalOpenClawPayload,
+      inspectLocalOpenClawPlugin,
+      ensureLocalCommerceTeam,
+      openCommerceSession,
+      runCommerceWorkflow,
+      getCommerceRun,
+      listCommerceRuns,
+      runLocalGatewayChatTask,
     },
   };
 } else {
@@ -7769,6 +9722,59 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("xiaolanbu:save-markdown-export", async (_event, payload) => {
     return saveMarkdownExport(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:ensure-commerce-team", async () => {
+    return ensureLocalCommerceTeam();
+  });
+
+  ipcMain.handle("xiaolanbu:list-commerce-agents", async () => {
+    const ensured = await ensureLocalCommerceTeam();
+    if (!ensured.ok) {
+      return ensured;
+    }
+    return {
+      ok: true,
+      items: ensured.agents,
+    };
+  });
+
+  ipcMain.handle("xiaolanbu:list-commerce-workflows", async () => {
+    const ensured = await ensureLocalCommerceTeam();
+    if (!ensured.ok) {
+      return ensured;
+    }
+    return {
+      ok: true,
+      items: ensured.workflows,
+    };
+  });
+
+  ipcMain.handle("xiaolanbu:open-commerce-session", async (_event, payload) => {
+    return openCommerceSession(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:run-commerce-workflow", async (_event, payload) => {
+    return runCommerceWorkflow(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:get-commerce-run", async (_event, payload) => {
+    return getCommerceRun(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:list-commerce-runs", async () => {
+    return {
+      ok: true,
+      items: listCommerceRuns(),
+    };
+  });
+
+  ipcMain.handle("xiaolanbu:export-commerce-run", async (_event, payload) => {
+    return exportCommerceRun(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:open-commerce-artifact", async (_event, payload) => {
+    return openCommerceArtifact(payload);
   });
 
   const win = createWindow();

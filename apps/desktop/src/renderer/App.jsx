@@ -23,6 +23,10 @@ const VIEW_META = {
     eyebrow: "Assistant",
     title: "部署一旦就绪，就直接开始聊天。",
   },
+  commerce: {
+    eyebrow: "Commerce Team",
+    title: "CEO + 9 个部门 agent，直接挂在本地 OpenClaw 上协作。",
+  },
   membership: {
     eyebrow: "Wallet & Billing",
     title: "让余额、用量和服务状态，像账号中心一样清晰而轻松。",
@@ -45,6 +49,12 @@ const NAV_ITEMS = [
     label: "小懒布",
     sub: "像聊天一样下达任务",
     icon: "✦",
+  },
+  {
+    key: "commerce",
+    label: "电商",
+    sub: "CEO 与部门多 Agent 团队",
+    icon: "▣",
   },
   {
     key: "membership",
@@ -106,6 +116,19 @@ const FALLBACK_GATEWAY_MODEL_CATALOG = [
     profileId: "qwen",
   },
 ];
+const DEFAULT_COMMERCE_BRIEF_FORM = {
+  platform: "抖音",
+  storeName: "",
+  productName: "",
+  category: "",
+  targetAudience: "",
+  price: "",
+  sellingPoints: "",
+  constraints: "",
+  channels: "抖音, 小红书",
+  assets: "",
+  outputLanguage: "zh-CN",
+};
 const CLOUD_TUNNEL_DASHBOARD_PORT = 28789;
 const CLOUD_TUNNEL_BROWSER_CONTROL_PORT = 28791;
 const BULK_REFRESH_NATIVE_RESPONSES_ACTION_ID = "__bulk_refresh_native_responses__";
@@ -509,6 +532,38 @@ function normalizeGatewaySessionsForChat(sessions, currentKey = "main") {
   return normalized;
 }
 
+function normalizeCommerceIdentifier(value, fallback = "") {
+  const normalized =
+    typeof value === "string"
+      ? value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+/g, "")
+          .replace(/-+$/g, "")
+      : "";
+  return normalized || fallback;
+}
+
+function buildCommerceAgentMainSessionKey(agentId) {
+  return `agent:${normalizeCommerceIdentifier(agentId, "main")}:main`;
+}
+
+function splitCommerceListInput(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return [];
+  }
+  return value
+    .split(/\r?\n|,/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 async function getTunnelStatus() {
   const bridge = getAppBridge();
   if (!bridge?.getTunnelStatus) {
@@ -676,6 +731,78 @@ async function saveMarkdownExport(payload) {
   }
 
   return bridge.saveMarkdownExport(payload);
+}
+
+async function ensureCommerceTeam() {
+  const bridge = getAppBridge();
+  if (!bridge?.ensureCommerceTeam) {
+    return { ok: false, error: "当前桌面端不支持电商团队初始化。" };
+  }
+  return bridge.ensureCommerceTeam();
+}
+
+async function listCommerceAgents() {
+  const bridge = getAppBridge();
+  if (!bridge?.listCommerceAgents) {
+    return { ok: false, error: "当前桌面端不支持电商 agent 列表。" };
+  }
+  return bridge.listCommerceAgents();
+}
+
+async function listCommerceWorkflows() {
+  const bridge = getAppBridge();
+  if (!bridge?.listCommerceWorkflows) {
+    return { ok: false, error: "当前桌面端不支持电商工作流列表。" };
+  }
+  return bridge.listCommerceWorkflows();
+}
+
+async function openCommerceSession(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.openCommerceSession) {
+    return { ok: false, error: "当前桌面端不支持打开电商会话。" };
+  }
+  return bridge.openCommerceSession(payload);
+}
+
+async function runCommerceWorkflow(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.runCommerceWorkflow) {
+    return { ok: false, error: "当前桌面端不支持运行电商工作流。" };
+  }
+  return bridge.runCommerceWorkflow(payload);
+}
+
+async function getCommerceRun(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.getCommerceRun) {
+    return { ok: false, error: "当前桌面端不支持读取电商运行记录。" };
+  }
+  return bridge.getCommerceRun(payload);
+}
+
+async function listCommerceRuns() {
+  const bridge = getAppBridge();
+  if (!bridge?.listCommerceRuns) {
+    return { ok: false, error: "当前桌面端不支持电商运行记录列表。" };
+  }
+  return bridge.listCommerceRuns();
+}
+
+async function exportCommerceRun(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.exportCommerceRun) {
+    return { ok: false, error: "当前桌面端不支持导出电商运行结果。" };
+  }
+  return bridge.exportCommerceRun(payload);
+}
+
+async function openCommerceArtifact(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.openCommerceArtifact) {
+    return { ok: false, error: "当前桌面端不支持打开电商产物。" };
+  }
+  return bridge.openCommerceArtifact(payload);
 }
 
 function subscribeGatewayChatEvents(listener) {
@@ -3838,6 +3965,7 @@ function AssistantView({
         }),
         getGatewaySessions({
           dashboardUrl: activeChatUrl,
+          agentId: "main",
           includeGlobal: true,
           includeUnknown: true,
           limit: 200,
@@ -4228,6 +4356,7 @@ function AssistantView({
     try {
       startGatewayChatMessage({
         dashboardUrl: activeChatUrl,
+        agentId: "main",
         sessionKey: chatSessionKey,
         message,
         attachments: attachmentsToSend,
@@ -4845,6 +4974,1108 @@ function AssistantView({
           </div>
         )}
       </article>
+    </section>
+  );
+}
+
+function CommerceView({
+  currentScopeId,
+  currentUser,
+  modelCatalog,
+  localRuntimeStatus,
+  localDeployPending,
+  localCredentialPending,
+  localDeployError,
+  localDeployFeedback,
+  onBootstrapLocal,
+  onRepairLocal,
+  onCopyText,
+}) {
+  const threadRef = useRef(null);
+  const textareaRef = useRef(null);
+  const chatRequestIdRef = useRef("");
+  const chatStreamRef = useRef("");
+  const chatStreamTargetRef = useRef("");
+  const chatStreamFlushTimerRef = useRef(0);
+  const toolStreamRef = useRef(
+    openclawChat.createToolStreamHost(buildCommerceAgentMainSessionKey("commerce-ceo")),
+  );
+  const loadVersionRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState("");
+  const [teamNotice, setTeamNotice] = useState("");
+  const [teamReady, setTeamReady] = useState(false);
+  const [teamDashboardUrl, setTeamDashboardUrl] = useState("");
+  const [commerceAgents, setCommerceAgents] = useState([]);
+  const [commerceWorkflows, setCommerceWorkflows] = useState([]);
+  const [selectedAgentId, setSelectedAgentId] = useState("commerce-ceo");
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState("launch-chain");
+  const [panelMode, setPanelMode] = useState("chat");
+  const [chatSessionKey, setChatSessionKey] = useState(
+    buildCommerceAgentMainSessionKey("commerce-ceo"),
+  );
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [chatThinkingLevel, setChatThinkingLevel] = useState(null);
+  const [chatShowThinking, setChatShowThinking] = useState(loadStoredChatShowThinking);
+  const [chatStream, setChatStream] = useState("");
+  const [chatStreamStartedAt, setChatStreamStartedAt] = useState(null);
+  const [chatStreamSegments, setChatStreamSegments] = useState([]);
+  const [chatToolMessages, setChatToolMessages] = useState([]);
+  const [chatSidebarContent, setChatSidebarContent] = useState(null);
+  const [chatSidebarMode, setChatSidebarMode] = useState("markdown");
+  const [agentSessions, setAgentSessions] = useState([]);
+  const [workflowForm, setWorkflowForm] = useState(DEFAULT_COMMERCE_BRIEF_FORM);
+  const [workflowPending, setWorkflowPending] = useState(false);
+  const [workflowError, setWorkflowError] = useState("");
+  const [workflowNotice, setWorkflowNotice] = useState("");
+  const [commerceRuns, setCommerceRuns] = useState([]);
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [selectedRun, setSelectedRun] = useState(null);
+  const availableGatewayModels = useMemo(
+    () => normalizeGatewayModelCatalog(modelCatalog),
+    [modelCatalog],
+  );
+  const selectedAgent =
+    commerceAgents.find((entry) => entry.id === selectedAgentId) ?? null;
+  const selectedWorkflow =
+    commerceWorkflows.find((entry) => entry.id === selectedWorkflowId) ?? null;
+  const normalizedSessions = useMemo(
+    () => normalizeGatewaySessionsForChat(agentSessions, chatSessionKey),
+    [agentSessions, chatSessionKey],
+  );
+  const activeSession =
+    normalizedSessions.find((entry) => sessionKeysLikelyMatch(chatSessionKey, entry.key)) ?? null;
+  const activeReasoningLevel =
+    typeof activeSession?.reasoningLevel === "string"
+      ? activeSession.reasoningLevel.trim().toLowerCase()
+      : "off";
+  const showThinking = chatShowThinking && activeReasoningLevel !== "off";
+  const threadItems = useMemo(
+    () =>
+      openclawChat.buildRenderableChatItems({
+        sessionKey: chatSessionKey,
+        messages: chatMessages,
+        toolMessages: chatToolMessages,
+        streamSegments: chatStreamSegments,
+        stream: chatSending ? chatStream : null,
+        streamStartedAt: chatStreamStartedAt,
+        showThinking,
+        assistantLabel: selectedAgent?.label || "电商 Agent",
+        userLabel: "你",
+        toolLabel: "工具",
+      }),
+    [
+      chatMessages,
+      chatSending,
+      chatSessionKey,
+      chatStream,
+      chatStreamSegments,
+      chatStreamStartedAt,
+      chatToolMessages,
+      selectedAgent?.label,
+      showThinking,
+    ],
+  );
+  const selectedRunArtifacts = Array.isArray(selectedRun?.artifacts) ? selectedRun.artifacts : [];
+  const selectedRunSummary =
+    typeof selectedRun?.summaryText === "string" ? selectedRun.summaryText : "";
+  const localReady = Boolean(localRuntimeStatus?.ready);
+  const localConfigured = Boolean(localRuntimeStatus?.localApiKeyConfigured);
+  const canInitializeCommerce = localReady && localConfigured;
+
+  const clearSmoothChatStreamTimer = () => {
+    if (chatStreamFlushTimerRef.current) {
+      window.clearTimeout(chatStreamFlushTimerRef.current);
+      chatStreamFlushTimerRef.current = 0;
+    }
+  };
+
+  const commitDisplayedChatStream = (nextText) => {
+    const normalizedText = typeof nextText === "string" ? nextText : "";
+    if (!toolStreamRef.current.chatStreamStartedAt && normalizedText) {
+      toolStreamRef.current.chatStreamStartedAt = Date.now();
+    }
+    toolStreamRef.current.chatStream = normalizedText;
+    chatStreamRef.current = normalizedText;
+    setChatStreamStartedAt(toolStreamRef.current.chatStreamStartedAt);
+    setChatStream(normalizedText);
+  };
+
+  const scheduleSmoothChatStreamFlush = () => {
+    if (chatStreamFlushTimerRef.current) {
+      return;
+    }
+
+    const flush = () => {
+      chatStreamFlushTimerRef.current = 0;
+      const targetText = chatStreamTargetRef.current;
+      const currentText = chatStreamRef.current;
+      if (!targetText || targetText.length <= currentText.length) {
+        return;
+      }
+
+      const remaining = targetText.length - currentText.length;
+      const step = Math.max(
+        CHAT_STREAM_SMOOTH_MIN_STEP,
+        Math.min(CHAT_STREAM_SMOOTH_MAX_STEP, Math.ceil(remaining / 10)),
+      );
+      const nextText = targetText.slice(0, currentText.length + step);
+      commitDisplayedChatStream(nextText);
+
+      if (nextText.length < targetText.length) {
+        chatStreamFlushTimerRef.current = window.setTimeout(
+          flush,
+          CHAT_STREAM_SMOOTH_INTERVAL_MS,
+        );
+      }
+    };
+
+    chatStreamFlushTimerRef.current = window.setTimeout(flush, CHAT_STREAM_SMOOTH_INTERVAL_MS);
+  };
+
+  const syncToolHostState = () => {
+    const snapshot = openclawChat.snapshotToolStream(toolStreamRef.current);
+    chatStreamRef.current = snapshot.chatStream ?? "";
+    chatStreamTargetRef.current = snapshot.chatStream ?? "";
+    setChatStream(snapshot.chatStream ?? "");
+    setChatStreamStartedAt(snapshot.chatStreamStartedAt ?? null);
+    setChatStreamSegments(snapshot.chatStreamSegments);
+    setChatToolMessages(snapshot.chatToolMessages);
+  };
+
+  const resetTransientState = ({ clearRunId = true } = {}) => {
+    if (clearRunId) {
+      toolStreamRef.current.chatRunId = null;
+    }
+    clearSmoothChatStreamTimer();
+    chatStreamTargetRef.current = "";
+    openclawChat.resetToolStream(toolStreamRef.current);
+    syncToolHostState();
+  };
+
+  const refreshRuns = async (nextSelectedRunId = "") => {
+    const result = await listCommerceRuns();
+    if (!result?.ok) {
+      return;
+    }
+    const items = Array.isArray(result.items) ? result.items : [];
+    setCommerceRuns(items);
+    const candidateRunId =
+      nextSelectedRunId ||
+      selectedRunId ||
+      (typeof items[0]?.id === "string" ? items[0].id : "");
+    if (candidateRunId) {
+      setSelectedRunId(candidateRunId);
+    } else {
+      setSelectedRun(null);
+    }
+  };
+
+  const loadSelectedRun = async (runId) => {
+    if (!runId) {
+      setSelectedRun(null);
+      return;
+    }
+    const result = await getCommerceRun({ runId });
+    if (!result?.ok) {
+      return;
+    }
+    setSelectedRun(result.run ?? null);
+  };
+
+  const loadCommerceTeam = async () => {
+    if (!canInitializeCommerce) {
+      setTeamReady(false);
+      return;
+    }
+
+    setTeamLoading(true);
+    setTeamError("");
+    const [ensureResult, runsResult] = await Promise.all([
+      ensureCommerceTeam(),
+      listCommerceRuns(),
+    ]);
+
+    if (!ensureResult?.ok) {
+      setTeamReady(false);
+      setTeamLoading(false);
+      setTeamError(ensureResult?.error || "电商团队初始化失败。");
+      return;
+    }
+
+    const agents = Array.isArray(ensureResult.agents) ? ensureResult.agents : [];
+    const workflows = Array.isArray(ensureResult.workflows) ? ensureResult.workflows : [];
+    const runs = runsResult?.ok && Array.isArray(runsResult.items) ? runsResult.items : [];
+    setCommerceAgents(agents);
+    setCommerceWorkflows(workflows);
+    setCommerceRuns(runs);
+    setTeamDashboardUrl(ensureResult.dashboardUrl || localRuntimeStatus.dashboardUrl || "");
+    setTeamNotice(
+      ensureResult.changed
+        ? "电商团队 workspace、agent 配置和本地工作流已与本机 OpenClaw 对齐。"
+        : "",
+    );
+    setTeamReady(true);
+    setTeamLoading(false);
+    setSelectedAgentId((current) =>
+      agents.some((entry) => entry.id === current) ? current : agents[0]?.id || "commerce-ceo",
+    );
+    setSelectedWorkflowId((current) =>
+      workflows.some((entry) => entry.id === current) ? current : workflows[0]?.id || "",
+    );
+    setSelectedRunId((current) =>
+      runs.some((entry) => entry.id === current) ? current : runs[0]?.id || "",
+    );
+  };
+
+  const loadCurrentSession = async ({ silent = false } = {}) => {
+    if (!teamReady || !selectedAgentId) {
+      return;
+    }
+    const currentLoadVersion = loadVersionRef.current + 1;
+    loadVersionRef.current = currentLoadVersion;
+    if (!silent) {
+      setChatLoading(true);
+    }
+    setChatError("");
+
+    const result = await openCommerceSession({
+      agentId: selectedAgentId,
+      sessionKey: chatSessionKey,
+      limit: 200,
+    });
+
+    if (currentLoadVersion !== loadVersionRef.current) {
+      return;
+    }
+    if (!result?.ok) {
+      setChatError(result?.error || "加载电商会话失败。");
+      if (!silent) {
+        setChatLoading(false);
+      }
+      return;
+    }
+
+    const nextMessages = openclawChat.normalizeHistoryMessages(result.messages);
+    setChatMessages(nextMessages);
+    setAgentSessions(Array.isArray(result.sessions) ? result.sessions : []);
+    setChatThinkingLevel(
+      typeof result.thinkingLevel === "string" && result.thinkingLevel.trim()
+        ? result.thinkingLevel.trim()
+        : null,
+    );
+    resetTransientState();
+    if (!silent) {
+      setChatLoading(false);
+    }
+  };
+
+  const handleIncomingChatEvent = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    if (payload.state === "delta") {
+      const nextText = openclawChat.extractTextCached(payload.message);
+      if (!nextText || openclawChat.isSilentReply(nextText)) {
+        return;
+      }
+      setChatSending(true);
+      chatStreamTargetRef.current =
+        nextText.length >= chatStreamTargetRef.current.length
+          ? nextText
+          : chatStreamTargetRef.current;
+      if (!chatStreamRef.current) {
+        commitDisplayedChatStream("");
+      }
+      scheduleSmoothChatStreamFlush();
+      return;
+    }
+
+    if (payload.state === "final") {
+      chatRequestIdRef.current = "";
+      setChatSending(false);
+      resetTransientState();
+      void loadCurrentSession({ silent: true });
+      return;
+    }
+
+    if (payload.state === "aborted") {
+      chatRequestIdRef.current = "";
+      setChatSending(false);
+      resetTransientState();
+      return;
+    }
+
+    if (payload.state === "error") {
+      setChatError(
+        typeof payload.errorMessage === "string" && payload.errorMessage.trim()
+          ? payload.errorMessage.trim()
+          : "消息发送失败。",
+      );
+      chatRequestIdRef.current = "";
+      setChatSending(false);
+      resetTransientState();
+    }
+  };
+
+  const handleIncomingAgentEvent = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    openclawChat.handleAgentEvent(toolStreamRef.current, payload);
+    syncToolHostState();
+  };
+
+  const copyChatText = async (value, successMessage = "已复制") => {
+    if (!value) {
+      return;
+    }
+    await onCopyText?.(value, successMessage);
+  };
+
+  const handleExportChatMarkdown = async () => {
+    const exportMessages = [...chatMessages];
+    if (chatSending && chatStreamRef.current && !openclawChat.isSilentReply(chatStreamRef.current)) {
+      exportMessages.push(openclawChat.createAssistantTextMessage(chatStreamRef.current));
+    }
+    const content = buildChatMarkdownExport(exportMessages, {
+      sessionKey: chatSessionKey,
+    });
+    await saveMarkdownExport({
+      suggestedName: `commerce-chat-${selectedAgentId}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.md`,
+      content,
+    });
+  };
+
+  const handleAbortChat = async () => {
+    if (!teamDashboardUrl) {
+      return;
+    }
+    const result = await abortGatewayChat({
+      dashboardUrl: teamDashboardUrl,
+      sessionKey: chatSessionKey,
+      runId: toolStreamRef.current.chatRunId || undefined,
+    });
+    if (!result?.ok) {
+      setChatError(result?.error || "停止当前对话失败。");
+      return;
+    }
+    chatRequestIdRef.current = "";
+    setChatSending(false);
+    resetTransientState();
+  };
+
+  const handleSendChat = async (messageOverride) => {
+    if (!teamReady || !teamDashboardUrl || !selectedAgentId) {
+      return;
+    }
+    const message =
+      typeof messageOverride === "string" ? messageOverride.trim() : chatDraft.trim();
+    if (!message) {
+      return;
+    }
+    if (isChatStopCommand(message)) {
+      await handleAbortChat();
+      return;
+    }
+
+    const requestId = `commerce-chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const runId = `commerce-run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    setChatDraft("");
+    setChatSending(true);
+    setChatError("");
+    shouldAutoScrollRef.current = true;
+    chatRequestIdRef.current = requestId;
+    resetTransientState();
+    toolStreamRef.current.chatRunId = runId;
+    setChatMessages((current) => [...current, openclawChat.createUserTextMessage(message)]);
+
+    try {
+      startGatewayChatMessage({
+        dashboardUrl: teamDashboardUrl,
+        agentId: selectedAgentId,
+        sessionKey: chatSessionKey,
+        message,
+        requestId,
+        runId,
+        timeoutMs: 180000,
+      });
+    } catch (error) {
+      chatRequestIdRef.current = "";
+      setChatSending(false);
+      setChatError(error instanceof Error ? error.message : "消息发送失败。");
+      resetTransientState();
+    }
+  };
+
+  const handleWorkflowSubmit = async () => {
+    if (!selectedWorkflow) {
+      return;
+    }
+    setWorkflowPending(true);
+    setWorkflowError("");
+    setWorkflowNotice("");
+    const result = await runCommerceWorkflow({
+      workflowId: selectedWorkflow.id,
+      targetAgentId: selectedWorkflow.targetAgentId,
+      platform: workflowForm.platform,
+      storeName: workflowForm.storeName,
+      productName: workflowForm.productName,
+      category: workflowForm.category,
+      targetAudience: workflowForm.targetAudience,
+      price: workflowForm.price,
+      sellingPoints: splitCommerceListInput(workflowForm.sellingPoints),
+      constraints: workflowForm.constraints,
+      channels: splitCommerceListInput(workflowForm.channels),
+      assets: splitCommerceListInput(workflowForm.assets),
+      outputLanguage: workflowForm.outputLanguage,
+    });
+    setWorkflowPending(false);
+    if (!result?.ok) {
+      setWorkflowError(result?.error || "电商工作流运行失败。");
+      return;
+    }
+    setWorkflowNotice("工作流已运行完成，结果已经落到本机 OpenClaw 的电商 workspace。");
+    const runId = result?.run?.id || "";
+    await refreshRuns(runId);
+    if (runId) {
+      await loadSelectedRun(runId);
+    }
+  };
+
+  useEffect(() => {
+    if (!canInitializeCommerce) {
+      setTeamReady(false);
+      setTeamError("");
+      return;
+    }
+    void loadCommerceTeam();
+  }, [canInitializeCommerce, currentScopeId, localRuntimeStatus?.authSyncedAt]);
+
+  useEffect(() => {
+    if (!selectedAgentId) {
+      return;
+    }
+    setChatSessionKey(buildCommerceAgentMainSessionKey(selectedAgentId));
+    setChatSidebarContent(null);
+    setChatSidebarMode("markdown");
+    setChatMessages([]);
+    setAgentSessions([]);
+    setChatError("");
+    resetTransientState();
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (!teamReady || !selectedAgentId || !chatSessionKey) {
+      return;
+    }
+    toolStreamRef.current.sessionKey = chatSessionKey;
+    void loadCurrentSession();
+  }, [teamReady, selectedAgentId, chatSessionKey]);
+
+  useEffect(() => {
+    if (!selectedRunId) {
+      setSelectedRun(null);
+      return;
+    }
+    void loadSelectedRun(selectedRunId);
+  }, [selectedRunId]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeGatewayChatEvents((frame) => {
+      if (!frame || typeof frame !== "object") {
+        return;
+      }
+      const frameRequestId =
+        typeof frame.requestId === "string" ? frame.requestId.trim() : "";
+      const frameRunId = typeof frame.runId === "string" ? frame.runId.trim() : "";
+      const activeRequestId = chatRequestIdRef.current;
+      const activeRunId = toolStreamRef.current.chatRunId || "";
+      const requestMatches = Boolean(activeRequestId) && frameRequestId === activeRequestId;
+      const runMatches = Boolean(activeRunId) && frameRunId === activeRunId;
+
+      if (!requestMatches && !runMatches) {
+        return;
+      }
+      if (frame.event === "chat") {
+        handleIncomingChatEvent(frame.payload);
+        return;
+      }
+      if (frame.event === "agent") {
+        handleIncomingAgentEvent(frame.payload);
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    toolStreamRef.current.sessionKey = chatSessionKey;
+  }, [chatSessionKey]);
+
+  useEffect(() => {
+    persistChatShowThinking(chatShowThinking);
+  }, [chatShowThinking]);
+
+  useEffect(() => {
+    adjustComposerTextareaHeight(textareaRef.current);
+  }, [chatDraft]);
+
+  useEffect(() => {
+    if (!threadRef.current || !shouldAutoScrollRef.current) {
+      return;
+    }
+    const node = threadRef.current;
+    const raf = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+      shouldAutoScrollRef.current = true;
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [threadItems, chatLoading, selectedRunId]);
+
+  useEffect(
+    () => () => {
+      clearSmoothChatStreamTimer();
+    },
+    [],
+  );
+
+  if (!localRuntimeStatus?.installed) {
+    return (
+      <section className="view view--commerce is-visible">
+        <article className="card commerce-blocking-card">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">本地 OpenClaw 尚未安装</div>
+              <div className="card-subtitle">
+                电商多 Agent 第一版只跑在本地 OpenClaw 上，后端不负责编排。
+              </div>
+            </div>
+          </div>
+          <div className="section-note">
+            先完成本地一键部署，之后 CEO 和各部门 agent 才能真正落到本机 workspace。
+          </div>
+          <div className="result-actions">
+            <button className="primary-button" onClick={onBootstrapLocal} disabled={localDeployPending}>
+              {localDeployPending ? "部署中..." : "先部署本地 OpenClaw"}
+            </button>
+          </div>
+        </article>
+      </section>
+    );
+  }
+
+  if (!localReady || !localConfigured) {
+    return (
+      <section className="view view--commerce is-visible">
+        <article className="card commerce-blocking-card">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">本地 OpenClaw 还没进入可用状态</div>
+              <div className="card-subtitle">
+                电商模块会直接复用本机 OpenClaw，因此要求本地网关和 API Key 都先就绪。
+              </div>
+            </div>
+          </div>
+          {localDeployError ? (
+            <div className="inline-notice inline-notice--error">{localDeployError}</div>
+          ) : null}
+          {!localDeployError && localDeployFeedback ? (
+            <div className="inline-notice inline-notice--info">{localDeployFeedback}</div>
+          ) : null}
+          <div className="section-note">
+            当前状态：
+            {localReady ? " 网关已启动。" : " 网关未完全就绪。"}
+            {localConfigured ? " API Key 已配置。" : " API Key 仍未同步。"}
+          </div>
+          <div className="result-actions">
+            <button
+              className="primary-button"
+              onClick={() => onRepairLocal?.()}
+              disabled={localDeployPending || localCredentialPending}
+            >
+              {localDeployPending || localCredentialPending ? "处理中..." : "修复 / 同步本地 OpenClaw"}
+            </button>
+          </div>
+        </article>
+      </section>
+    );
+  }
+
+  return (
+    <section className="view view--commerce is-visible">
+      {localDeployError ? (
+        <div className="inline-notice inline-notice--error">{localDeployError}</div>
+      ) : null}
+      {!localDeployError && localDeployFeedback ? (
+        <div className="inline-notice inline-notice--info">{localDeployFeedback}</div>
+      ) : null}
+      {teamError ? <div className="inline-notice inline-notice--error">{teamError}</div> : null}
+      {!teamError && teamNotice ? (
+        <div className="inline-notice inline-notice--success">{teamNotice}</div>
+      ) : null}
+
+      <div className="commerce-layout">
+        <aside className="card commerce-sidebar">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">电商团队</div>
+              <div className="card-subtitle">
+                {currentUser?.displayName || "当前用户"} 的本地 OpenClaw 电商 workspace。
+              </div>
+            </div>
+            <button
+              className="ghost-button small"
+              onClick={() => void loadCommerceTeam()}
+              disabled={teamLoading}
+            >
+              {teamLoading ? "刷新中..." : "刷新"}
+            </button>
+          </div>
+          <div className="commerce-section-label">直聊 Agent</div>
+          <div className="commerce-agent-list">
+            {commerceAgents.map((agent) => (
+              <button
+                key={agent.id}
+                className={`commerce-agent-card${selectedAgentId === agent.id && panelMode === "chat" ? " is-active" : ""}`}
+                onClick={() => {
+                  setPanelMode("chat");
+                  setSelectedAgentId(agent.id);
+                }}
+              >
+                <div className="commerce-agent-card__top">
+                  <strong>{agent.label}</strong>
+                  <span
+                    className={`assistant-model-badge${
+                      agent.status === "coming-soon" ? " assistant-model-badge--mono" : ""
+                    }`}
+                  >
+                    {agent.status === "coming-soon" ? "即将开放" : "可直聊"}
+                  </span>
+                </div>
+                <div className="commerce-agent-card__meta">
+                  {agent.department} · 默认模型 {agent.defaultModelId}
+                </div>
+                <div className="commerce-agent-card__summary">{agent.summary}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="commerce-section-label">工作流模板</div>
+          <div className="commerce-workflow-list">
+            {commerceWorkflows.map((workflow) => (
+              <button
+                key={workflow.id}
+                className={`commerce-workflow-card${
+                  selectedWorkflowId === workflow.id && panelMode === "workflow" ? " is-active" : ""
+                }`}
+                onClick={() => {
+                  setPanelMode("workflow");
+                  setSelectedWorkflowId(workflow.id);
+                }}
+              >
+                <div className="commerce-workflow-card__top">
+                  <strong>{workflow.label}</strong>
+                  <span className="assistant-model-badge assistant-model-badge--mono">
+                    {workflow.status === "coming-soon" ? "Phase 2" : "Phase 1"}
+                  </span>
+                </div>
+                <div className="commerce-workflow-card__desc">{workflow.description}</div>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="card commerce-main">
+          {panelMode === "chat" ? (
+            <>
+              <div className="card-heading">
+                <div>
+                  <div className="card-title">
+                    {selectedAgent?.label || "电商 Agent"}
+                    {selectedAgent?.status === "coming-soon" ? " · Phase 1 占位能力" : ""}
+                  </div>
+                  <div className="card-subtitle">
+                    当前会话绑定到 {chatSessionKey}，默认模型 {selectedAgent?.defaultModelId || "--"}。
+                  </div>
+                </div>
+                <div className="commerce-main__actions">
+                  <button
+                    className={`assistant-tool-button${chatShowThinking ? " is-active" : ""}`}
+                    type="button"
+                    title={chatShowThinking ? "隐藏工作细节" : "显示工作细节"}
+                    onClick={() => setChatShowThinking((current) => !current)}
+                  >
+                    <ComposerIcon>
+                      <BrainIcon />
+                    </ComposerIcon>
+                  </button>
+                  <button
+                    className="assistant-tool-button"
+                    type="button"
+                    title={chatSending ? "停止生成" : "导出聊天记录"}
+                    onClick={() =>
+                      chatSending ? void handleAbortChat() : void handleExportChatMarkdown()
+                    }
+                  >
+                    <ComposerIcon>
+                      {chatSending ? <StopIcon /> : <UploadIcon />}
+                    </ComposerIcon>
+                  </button>
+                </div>
+              </div>
+
+              <div className="assistant-session-bar commerce-session-bar">
+                <div className="assistant-session-bar__meta">
+                  <strong>{selectedAgent?.department || "电商多 Agent"}</strong>
+                  <span>
+                    {selectedAgent?.status === "coming-soon"
+                      ? "当前只输出策略、清单和提示词，不直接出图/出视频。"
+                      : "直接基于本地 OpenClaw 会话，不经后端编排。"}
+                  </span>
+                </div>
+                <label className="assistant-session-bar__model">
+                  <span>会话</span>
+                  <select
+                    value={chatSessionKey}
+                    onChange={(event) => setChatSessionKey(event.target.value)}
+                    disabled={chatSending || normalizedSessions.length === 0}
+                  >
+                    {normalizedSessions.map((session) => (
+                      <option key={session.key} value={session.key}>
+                        {formatGatewaySessionLabel(session)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="assistant-session-bar__model-hint">
+                    reasoning={activeSession?.reasoningLevel || "off"}
+                    {chatThinkingLevel ? ` · thinking=${chatThinkingLevel}` : ""}
+                  </span>
+                </label>
+              </div>
+
+              <div className={`chat-split-container${chatSidebarContent ? " chat-split-container--open" : ""}`}>
+                <div className="chat-main">
+                  <div
+                    className="assistant-thread commerce-thread"
+                    ref={threadRef}
+                    onScroll={() => {
+                      shouldAutoScrollRef.current = isThreadNearBottom(threadRef.current);
+                    }}
+                  >
+                    {chatLoading ? (
+                      <div className="assistant-thread__notice">正在加载该部门会话...</div>
+                    ) : null}
+                    {!chatLoading && chatMessages.length === 0 ? (
+                      <div className="assistant-thread__notice">
+                        可以直接对 {selectedAgent?.label || "该部门"} 下任务。这里是独立 agent，会话不会和 CEO 混在一起。
+                      </div>
+                    ) : null}
+                    {threadItems.map((item) =>
+                      renderChatThreadItem(item, {
+                        onCopyText: copyChatText,
+                        onOpenSidebar: setChatSidebarContent,
+                      }),
+                    )}
+                  </div>
+
+                  <div className="chat-compose">
+                    {chatError ? <div className="assistant-error">{chatError}</div> : null}
+                    <div className="assistant-composer">
+                      <label className="chat-compose__field">
+                        <span>Message</span>
+                        <textarea
+                          ref={textareaRef}
+                          className="assistant-textarea"
+                          value={chatDraft}
+                          placeholder="直接给 CEO 或部门 agent 下命令。/new 会走 OpenClaw 原生命令。"
+                          dir="auto"
+                          onChange={(event) => {
+                            adjustComposerTextareaHeight(event.target);
+                            setChatDraft(event.target.value);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) {
+                              return;
+                            }
+                            event.preventDefault();
+                            void handleSendChat();
+                          }}
+                        />
+                      </label>
+                      <div className="assistant-composer__toolbar">
+                        <div className="assistant-composer__toolbar-group">
+                          <button
+                            className="assistant-tool-button"
+                            type="button"
+                            title="新建会话"
+                            onClick={() => void handleSendChat("/new")}
+                          >
+                            <ComposerIcon>
+                              <PlusIcon />
+                            </ComposerIcon>
+                          </button>
+                        </div>
+                        <div className="assistant-composer__toolbar-group assistant-composer__toolbar-group--right">
+                          <button
+                            className={`assistant-send-button${chatSending ? " is-queueing" : ""}`}
+                            type="button"
+                            onClick={() => void handleSendChat()}
+                          >
+                            <ComposerIcon>
+                              <SendIcon />
+                            </ComposerIcon>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {chatSidebarContent ? (
+                  <div className="chat-sidebar">
+                    <MarkdownSidebar
+                      content={chatSidebarContent}
+                      mode={chatSidebarMode}
+                      onChangeMode={setChatSidebarMode}
+                      onClose={() => setChatSidebarContent(null)}
+                      onCopyText={copyChatText}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="card-heading">
+                <div>
+                  <div className="card-title">{selectedWorkflow?.label || "选择工作流"}</div>
+                  <div className="card-subtitle">
+                    {selectedWorkflow?.description || "选择左侧模板后，桌面端会把 brief 写入本地 OpenClaw workspace，再编排各部门 agent 运行。"}
+                  </div>
+                </div>
+                <button
+                  className="primary-button small"
+                  onClick={() => void handleWorkflowSubmit()}
+                  disabled={workflowPending || selectedWorkflow?.status === "coming-soon"}
+                >
+                  {workflowPending
+                    ? "运行中..."
+                    : selectedWorkflow?.status === "coming-soon"
+                      ? "Phase 2 开放"
+                      : "运行工作流"}
+                </button>
+              </div>
+
+              {workflowError ? (
+                <div className="inline-notice inline-notice--error">{workflowError}</div>
+              ) : null}
+              {!workflowError && workflowNotice ? (
+                <div className="inline-notice inline-notice--success">{workflowNotice}</div>
+              ) : null}
+
+              <div className="commerce-form-grid">
+                <label className="field">
+                  <span>平台</span>
+                  <input
+                    type="text"
+                    value={workflowForm.platform}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, platform: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>店铺名称</span>
+                  <input
+                    type="text"
+                    value={workflowForm.storeName}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, storeName: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>商品名称</span>
+                  <input
+                    type="text"
+                    value={workflowForm.productName}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, productName: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>类目</span>
+                  <input
+                    type="text"
+                    value={workflowForm.category}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, category: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>目标人群</span>
+                  <input
+                    type="text"
+                    value={workflowForm.targetAudience}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, targetAudience: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>价格带</span>
+                  <input
+                    type="text"
+                    value={workflowForm.price}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, price: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field field--full">
+                  <span>卖点</span>
+                  <textarea
+                    value={workflowForm.sellingPoints}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, sellingPoints: event.target.value }))
+                    }
+                    placeholder="每行一个卖点，或用逗号分隔"
+                  />
+                </label>
+                <label className="field field--full">
+                  <span>约束条件</span>
+                  <textarea
+                    value={workflowForm.constraints}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, constraints: event.target.value }))
+                    }
+                    placeholder="例如：不能虚假承诺、不能低于某价格、要兼顾宝妈人群"
+                  />
+                </label>
+                <label className="field">
+                  <span>渠道</span>
+                  <input
+                    type="text"
+                    value={workflowForm.channels}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, channels: event.target.value }))
+                    }
+                    placeholder="抖音, 小红书, 视频号"
+                  />
+                </label>
+                <label className="field">
+                  <span>素材资产</span>
+                  <input
+                    type="text"
+                    value={workflowForm.assets}
+                    onChange={(event) =>
+                      setWorkflowForm((current) => ({ ...current, assets: event.target.value }))
+                    }
+                    placeholder="例如：商品图, 参数表, 竞品截图"
+                  />
+                </label>
+              </div>
+
+              {selectedWorkflow?.status === "coming-soon" ? (
+                <div className="section-note">
+                  视觉设计部和视频剪辑部在 Phase 1 只保留入口。你现在可以先沉淀 brief 和策略，等 Phase 2 再接图像/视频闭环。
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+
+        <aside className="card commerce-run-panel">
+          <div className="card-heading">
+            <div>
+              <div className="card-title">项目产物</div>
+              <div className="card-subtitle">工作流结果会直接落盘，并可复制、导出或打开。</div>
+            </div>
+          </div>
+
+          <div className="commerce-run-list">
+            {commerceRuns.length === 0 ? (
+              <div className="section-note">还没有 workflow run。先运行一个模板，右侧会显示产物和 Markdown 汇总。</div>
+            ) : (
+              commerceRuns.map((run) => (
+                <button
+                  key={run.id}
+                  className={`commerce-run-card${selectedRunId === run.id ? " is-active" : ""}`}
+                  onClick={() => setSelectedRunId(run.id)}
+                >
+                  <div className="commerce-run-card__top">
+                    <strong>{run.workflowLabel || run.workflowId}</strong>
+                    <span className="assistant-model-badge assistant-model-badge--mono">
+                      {run.status}
+                    </span>
+                  </div>
+                  <div className="commerce-run-card__meta">
+                    {run.targetAgentId} · {formatDateTime(run.startedAt)}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
+          {selectedRun ? (
+            <div className="commerce-run-detail">
+              <div className="commerce-run-detail__actions">
+                <button
+                  className="ghost-button small"
+                  onClick={() => void exportCommerceRun({ runId: selectedRun.id })}
+                >
+                  导出 Markdown
+                </button>
+                <button
+                  className="ghost-button small"
+                  onClick={() => copyChatText(selectedRunSummary, "工作流结果已复制")}
+                  disabled={!selectedRunSummary}
+                >
+                  复制结果
+                </button>
+              </div>
+
+              <div className="commerce-run-detail__summary">
+                <pre>{selectedRunSummary || "当前 run 还没有可展示的 Markdown 汇总。"}</pre>
+              </div>
+
+              <div className="commerce-section-label">产物文件</div>
+              <div className="commerce-artifact-list">
+                {selectedRunArtifacts.map((artifact) => (
+                  <div className="commerce-artifact-row" key={artifact.id || artifact.path}>
+                    <div>
+                      <strong>{artifact.label || artifact.id}</strong>
+                      <div className="commerce-artifact-row__path">{artifact.path}</div>
+                    </div>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => void openCommerceArtifact({ path: artifact.path })}
+                    >
+                      打开
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="commerce-run-panel__footnote">
+            本地 provider: {availableGatewayModels[0]?.providerId || "openai"} · 当前账号范围 {currentScopeId || "--"}
+          </div>
+        </aside>
+      </div>
     </section>
   );
 }
@@ -8682,6 +9913,21 @@ export function App() {
                   createFeedback: "",
                 }))
               }
+            />
+          ) : null}
+          {currentView === "commerce" ? (
+            <CommerceView
+              currentScopeId={currentScopeId}
+              currentUser={authState.user}
+              modelCatalog={modelCatalog}
+              localRuntimeStatus={localRuntimeStatus}
+              localDeployPending={workspaceState.localDeployPending}
+              localCredentialPending={workspaceState.localCredentialPending}
+              localDeployError={workspaceState.localDeployError}
+              localDeployFeedback={workspaceState.localDeployFeedback}
+              onBootstrapLocal={handleCreateLocalDeployment}
+              onRepairLocal={handleRepairLocalDeployment}
+              onCopyText={handleCopyText}
             />
           ) : null}
           {currentView === "membership" ? (

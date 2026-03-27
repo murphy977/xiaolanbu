@@ -42,6 +42,30 @@ async function main() {
     case "bootstrap":
       result = await __helpers.bootstrapLocalOpenClawPayload(payload);
       break;
+    case "inspect-plugin":
+      result = await __helpers.inspectLocalOpenClawPlugin(payload?.pluginId);
+      break;
+    case "ensure-commerce":
+      result = await __helpers.ensureLocalCommerceTeam();
+      break;
+    case "open-commerce-session":
+      result = await __helpers.openCommerceSession(payload);
+      break;
+    case "run-commerce-workflow":
+      result = await __helpers.runCommerceWorkflow(payload);
+      break;
+    case "get-commerce-run":
+      result = await __helpers.getCommerceRun(payload);
+      break;
+    case "list-commerce-runs":
+      result = {
+        ok: true,
+        items: __helpers.listCommerceRuns(),
+      };
+      break;
+    case "run-chat-task":
+      result = await __helpers.runLocalGatewayChatTask(payload);
+      break;
     case "smoke-chat":
       result = await runLocalChatSmokeTest();
       break;

@@ -32,6 +32,15 @@ contextBridge.exposeInMainWorld("xiaolanbu", {
     ipcRenderer.invoke("xiaolanbu:send-gateway-chat-message", payload),
   saveMarkdownExport: (payload) =>
     ipcRenderer.invoke("xiaolanbu:save-markdown-export", payload),
+  ensureCommerceTeam: () => ipcRenderer.invoke("xiaolanbu:ensure-commerce-team"),
+  listCommerceAgents: () => ipcRenderer.invoke("xiaolanbu:list-commerce-agents"),
+  listCommerceWorkflows: () => ipcRenderer.invoke("xiaolanbu:list-commerce-workflows"),
+  openCommerceSession: (payload) => ipcRenderer.invoke("xiaolanbu:open-commerce-session", payload),
+  runCommerceWorkflow: (payload) => ipcRenderer.invoke("xiaolanbu:run-commerce-workflow", payload),
+  getCommerceRun: (payload) => ipcRenderer.invoke("xiaolanbu:get-commerce-run", payload),
+  listCommerceRuns: () => ipcRenderer.invoke("xiaolanbu:list-commerce-runs"),
+  exportCommerceRun: (payload) => ipcRenderer.invoke("xiaolanbu:export-commerce-run", payload),
+  openCommerceArtifact: (payload) => ipcRenderer.invoke("xiaolanbu:open-commerce-artifact", payload),
   subscribeGatewayChatEvents: (listener) => {
     if (typeof listener !== "function") {
       return () => {};

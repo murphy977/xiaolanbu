@@ -5233,6 +5233,209 @@ button.toggle-item:hover {
   color: var(--mint);
 }
 
+.commerce-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1.25fr) minmax(320px, 380px);
+  gap: 18px;
+  min-height: calc(100vh - 180px);
+}
+
+.commerce-sidebar,
+.commerce-main,
+.commerce-run-panel,
+.commerce-blocking-card {
+  min-height: 0;
+}
+
+.commerce-sidebar,
+.commerce-run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.commerce-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.commerce-section-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.commerce-agent-list,
+.commerce-workflow-list,
+.commerce-run-list,
+.commerce-artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.commerce-agent-card,
+.commerce-workflow-card,
+.commerce-run-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(31, 34, 39, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 14px 16px;
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.commerce-agent-card:hover,
+.commerce-workflow-card:hover,
+.commerce-run-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 106, 61, 0.18);
+  box-shadow: 0 16px 32px rgba(72, 42, 14, 0.08);
+}
+
+.commerce-agent-card.is-active,
+.commerce-workflow-card.is-active,
+.commerce-run-card.is-active {
+  border-color: rgba(255, 106, 61, 0.3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 244, 236, 0.88));
+  box-shadow: 0 20px 40px rgba(72, 42, 14, 0.1);
+}
+
+.commerce-agent-card__top,
+.commerce-workflow-card__top,
+.commerce-run-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.commerce-agent-card__meta,
+.commerce-run-card__meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.commerce-agent-card__summary,
+.commerce-workflow-card__desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(29, 31, 36, 0.76);
+}
+
+.commerce-main__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.commerce-session-bar {
+  margin-bottom: -4px;
+}
+
+.commerce-thread {
+  min-height: 420px;
+}
+
+.commerce-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field--full {
+  grid-column: 1 / -1;
+}
+
+.commerce-form-grid .field textarea {
+  min-height: 128px;
+  width: 100%;
+  border: 1px solid rgba(31, 34, 39, 0.08);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  font-family: var(--font-body);
+  line-height: 1.55;
+}
+
+.commerce-form-grid .field textarea:focus {
+  border-color: rgba(255, 106, 61, 0.26);
+  box-shadow: 0 0 0 4px rgba(255, 106, 61, 0.08);
+}
+
+.commerce-run-detail {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.commerce-run-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.commerce-run-detail__summary {
+  border: 1px solid rgba(31, 34, 39, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 14px 16px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.commerce-run-detail__summary pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.commerce-artifact-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(31, 34, 39, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 12px 14px;
+}
+
+.commerce-artifact-row__path {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.commerce-run-panel__footnote {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.commerce-blocking-card .result-actions {
+  margin-top: 12px;
+}
+
 @keyframes view-enter {
   from {
     opacity: 0;
@@ -5290,6 +5493,7 @@ button.toggle-item:hover {
 
   .home-grid,
   .assistant-layout,
+  .commerce-layout,
   .settings-layout,
   .plan-grid,
   .stat-strip,
@@ -5338,6 +5542,7 @@ button.toggle-item:hover {
   .stat-strip,
   .home-grid,
   .assistant-layout,
+  .commerce-layout,
   .plan-grid,
   .settings-layout,
   .membership-grid,
@@ -5348,7 +5553,8 @@ button.toggle-item:hover {
   .quick-topup-grid,
   .create-grid,
   .create-grid--triple,
-  .create-grid--advanced {
+  .create-grid--advanced,
+  .commerce-form-grid {
     display: grid;
     grid-template-columns: 1fr;
   }
