@@ -21,6 +21,7 @@ NODE_VERSION="${NODE_VERSION:-22.22.1}"
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
 NODE_DOWNLOAD_BASE="${NODE_DOWNLOAD_BASE:-https://registry.npmmirror.com/-/binary/node}"
 OPENCLAW_SPEC="${OPENCLAW_SPEC:-openclaw@latest}"
+RUNTIME_REFERENCE_DIR="${XLB_RUNTIME_REFERENCE_DIR:-}"
 
 mkdir -p "$DIST_DIR"
 
@@ -51,6 +52,10 @@ export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="1"
 
 echo "Installing ${OPENCLAW_SPEC}"
 "$NODE_CURRENT/bin/npm" install -g --force "$OPENCLAW_SPEC"
+
+if [[ -n "$RUNTIME_REFERENCE_DIR" ]]; then
+  "$ROOT_DIR/scripts/apply-openclaw-runtime-overlay.sh" "$RUNTIME_REFERENCE_DIR" "$RUNTIME_ROOT"
+fi
 
 PACKAGE_JSON="$NPM_PREFIX/lib/node_modules/openclaw/package.json"
 if [[ ! -f "$PACKAGE_JSON" ]]; then

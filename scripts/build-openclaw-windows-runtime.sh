@@ -22,6 +22,7 @@ NODE_DOWNLOAD_BASE="${NODE_DOWNLOAD_BASE:-https://nodejs.org/dist}"
 OPENCLAW_SPEC="${OPENCLAW_SPEC:-openclaw@latest}"
 HOST_NODE_BIN="${HOST_NODE_BIN:-$(command -v node)}"
 HOST_NPM_BIN="${HOST_NPM_BIN:-$(command -v npm)}"
+RUNTIME_REFERENCE_DIR="${XLB_RUNTIME_REFERENCE_DIR:-}"
 
 if [[ -z "$HOST_NODE_BIN" || -z "$HOST_NPM_BIN" ]]; then
   echo "Host node/npm are required to build the Windows runtime bundle." >&2
@@ -78,6 +79,10 @@ export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD="1"
 
 echo "Installing ${OPENCLAW_SPEC}"
 "$HOST_NPM_BIN" install -g --force "$OPENCLAW_SPEC"
+
+if [[ -n "$RUNTIME_REFERENCE_DIR" ]]; then
+  "$ROOT_DIR/scripts/apply-openclaw-runtime-overlay.sh" "$RUNTIME_REFERENCE_DIR" "$RUNTIME_ROOT"
+fi
 
 PACKAGE_JSON="$NPM_PREFIX/node_modules/openclaw/package.json"
 if [[ ! -f "$PACKAGE_JSON" ]]; then
