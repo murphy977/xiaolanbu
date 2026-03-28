@@ -109,6 +109,7 @@ async function startLiteLlmStub(t) {
             key_alias: record.key_alias,
             key_name: record.key_name,
             metadata: record.metadata,
+            models: record.models,
           },
         });
         return;
@@ -126,6 +127,9 @@ async function startLiteLlmStub(t) {
         }
         if (typeof body.blocked === "boolean") {
           record.blocked = body.blocked;
+        }
+        if (Array.isArray(body.models)) {
+          record.models = body.models;
         }
         keys.set(key, record);
         respondJson(200, { ok: true });
@@ -252,9 +256,23 @@ test("runtime local bootstrap reuses one credential per account scope and deploy
   assert.equal(second.defaultModelId, first.defaultModelId);
   assert.ok(Array.isArray(first.allowedModelIds));
   assert.ok(first.allowedModelIds.includes(first.defaultModelId));
+  assert.ok(
+    !first.allowedModelIds.includes("text-embedding-3-small"),
+    "embedding support models must not pollute the visible chat model list",
+  );
   assert.ok(Array.isArray(first.modelCatalog));
   assert.ok(first.modelCatalog.length > 0);
   assert.ok(Array.isArray(first.runtimePackages));
+
+  const keyInfoResponse = await fetch(
+    `${liteLlm.baseUrl}/key/info?key=${encodeURIComponent(first.apiKey)}`,
+  );
+  assert.equal(keyInfoResponse.status, 200);
+  const keyInfo = await keyInfoResponse.json();
+  assert.ok(
+    Array.isArray(keyInfo.info?.models) && keyInfo.info.models.includes("text-embedding-3-small"),
+    "managed local key should include the embedding model entitlement for OpenClaw memory search",
+  );
 
   const listed = await requestJson(baseUrl, "/v1/deployments", { headers });
   assert.ok(Array.isArray(listed.items));

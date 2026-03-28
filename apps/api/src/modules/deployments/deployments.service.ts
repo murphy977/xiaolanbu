@@ -72,6 +72,7 @@ type ResolvedDeploymentGatewayConfig = {
   managedByLiteLlm: boolean;
   keyScope?: "catalog";
   allowedModelIds?: string[];
+  keyEntitlementModelIds?: string[];
 };
 
 @Injectable()
@@ -254,7 +255,9 @@ export class DeploymentsService {
           gatewayKeyName: gatewayProvision?.keyName,
           gatewayKeyAlias: gatewayProvision?.keyAlias,
           gatewayKeyScope: gatewayProvision ? "catalog" : undefined,
-          gatewayAllowedModelIds: gatewayProvision ? this.resolveManagedGatewayKeyModelIds() : undefined,
+          gatewayAllowedModelIds: gatewayProvision
+            ? this.resolveManagedGatewayVisibleModelIds()
+            : undefined,
         },
       });
 
@@ -900,7 +903,7 @@ export class DeploymentsService {
         gatewayKeyAlias: gatewayProvision.keyAlias,
         gatewayKeyScope: gatewayProvision.managedByLiteLlm ? "catalog" : undefined,
         gatewayAllowedModelIds: gatewayProvision.managedByLiteLlm
-          ? gatewayProvision.allowedModelIds ?? this.resolveManagedGatewayKeyModelIds()
+          ? gatewayProvision.allowedModelIds ?? this.resolveManagedGatewayVisibleModelIds()
           : undefined,
       },
     });
@@ -1151,7 +1154,7 @@ export class DeploymentsService {
         ...managedGatewayConfig,
         managedByLiteLlm: true,
         keyScope: "catalog",
-        allowedModelIds: this.resolveManagedGatewayKeyModelIds(),
+        allowedModelIds: this.resolveManagedGatewayVisibleModelIds(),
       };
     }
 
@@ -1192,7 +1195,7 @@ export class DeploymentsService {
     const allowedModelIds = this.resolveDeploymentGatewayAllowedModelIds(metadata);
     const keyScope =
       typeof metadata.gatewayKeyScope === "string" ? metadata.gatewayKeyScope.trim().toLowerCase() : "";
-    const currentCatalogModelIds = this.resolveManagedGatewayKeyModelIds();
+    const currentCatalogModelIds = this.resolveManagedGatewayVisibleModelIds();
     const keyCoversRequestedModel =
       keyScope === "catalog"
         ? currentCatalogModelIds.includes(requestedModelId)
@@ -1266,7 +1269,7 @@ export class DeploymentsService {
       const allowedModelIds =
         Array.isArray(config.allowedModelIds) && config.allowedModelIds.length > 0
           ? config.allowedModelIds
-          : this.resolveManagedGatewayKeyModelIds();
+          : this.resolveManagedGatewayVisibleModelIds();
       nextMetadata.gatewayKeyScope = config.keyScope ?? "catalog";
       nextMetadata.gatewayAllowedModelIds = [...allowedModelIds];
     } else {
@@ -2028,7 +2031,7 @@ export class DeploymentsService {
     return catalog.find((item) => item.isDefault)?.id || catalog[0]?.id || "gpt-5.2";
   }
 
-  private resolveManagedGatewayKeyModelIds() {
+  private resolveManagedGatewayVisibleModelIds() {
     const catalogModelIds = Array.from(
       new Set(
         this.resolveGatewayModelCatalog()
@@ -2042,6 +2045,35 @@ export class DeploymentsService {
     }
 
     return [this.resolveConfiguredGatewayModel()];
+  }
+
+  private resolveManagedGatewaySupportModelIds() {
+    const rawConfigured =
+      process.env.XLB_GATEWAY_SUPPORT_MODELS?.trim() ??
+      process.env.XLB_GATEWAY_EMBEDDING_MODEL?.trim() ??
+      "text-embedding-3-small";
+
+    if (!rawConfigured) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        rawConfigured
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private resolveManagedGatewayKeyModelIds() {
+    return Array.from(
+      new Set([
+        ...this.resolveManagedGatewayVisibleModelIds(),
+        ...this.resolveManagedGatewaySupportModelIds(),
+      ]),
+    );
   }
 
   private resolveGatewayModelGroupName(item: Pick<GatewayModelCatalogEntry, "profileId" | "providerId">) {
@@ -2277,7 +2309,8 @@ export class DeploymentsService {
     }
 
     const modelId = input.requestedModelId ?? this.resolveConfiguredGatewayModel();
-    const allowedModelIds = this.resolveManagedGatewayKeyModelIds();
+    const allowedModelIds = this.resolveManagedGatewayVisibleModelIds();
+    const keyEntitlementModelIds = this.resolveManagedGatewayKeyModelIds();
     const providerId = this.resolveConfiguredProviderId(modelId);
     const keyAlias = `deployment:${input.deploymentId}:${Date.now().toString(36)}${randomBytes(2).toString("hex")}`;
     const ownerUserId =
@@ -2285,7 +2318,7 @@ export class DeploymentsService {
     const wallet = await this.storeService.getWalletByUserIdAsync(ownerUserId);
     const initialBudget = this.resolveInitialGatewayKeyBudget(wallet.balanceCny);
     const generated = await this.liteLlmProxyService.generateVirtualKey({
-      models: allowedModelIds,
+      models: keyEntitlementModelIds,
       maxBudget: initialBudget,
       keyAlias,
       metadata: {
@@ -2312,6 +2345,8 @@ export class DeploymentsService {
       baseUrl,
       modelId,
       providerId,
+      allowedModelIds,
+      keyEntitlementModelIds,
     };
   }
 
@@ -2465,7 +2500,7 @@ export class DeploymentsService {
         providerId: input.providerId,
         managedByLiteLlm: true,
         keyScope: "catalog",
-        allowedModelIds: this.resolveManagedGatewayKeyModelIds(),
+        allowedModelIds: this.resolveManagedGatewayVisibleModelIds(),
       }),
     });
   }
@@ -2519,7 +2554,8 @@ export class DeploymentsService {
         providerId: body.openclawProviderId?.trim() || gatewayProvision.providerId,
         managedByLiteLlm: true,
         keyScope: "catalog",
-        allowedModelIds: this.resolveManagedGatewayKeyModelIds(),
+        allowedModelIds: this.resolveManagedGatewayVisibleModelIds(),
+        keyEntitlementModelIds: this.resolveManagedGatewayKeyModelIds(),
       };
     }
 

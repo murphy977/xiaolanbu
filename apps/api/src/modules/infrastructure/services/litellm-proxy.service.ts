@@ -311,6 +311,7 @@ export class LiteLlmProxyService {
     key: string;
     maxBudget?: number;
     blocked?: boolean;
+    models?: string[];
   }) {
     const baseUrl = this.getProxyBaseUrl();
     const masterKey = process.env.LITELLM_MASTER_KEY;
@@ -331,6 +332,10 @@ export class LiteLlmProxyService {
 
     if (typeof input.blocked === "boolean") {
       payload.blocked = input.blocked;
+    }
+
+    if (Array.isArray(input.models)) {
+      payload.models = input.models.filter((item) => typeof item === "string" && item.trim());
     }
 
     const response = await fetch(`${baseUrl}/key/update`, {

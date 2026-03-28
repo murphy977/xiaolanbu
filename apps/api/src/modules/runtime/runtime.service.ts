@@ -13,6 +13,7 @@ import {
   resolveConfiguredGatewayModel,
   resolveConfiguredProviderId,
   resolveGatewayModelCatalog,
+  resolveManagedGatewayVisibleModelIds,
   resolveManagedGatewayKeyModelIds,
 } from "./gateway-model-catalog";
 
@@ -126,7 +127,8 @@ export class RuntimeService {
     }
 
     const defaultModelId = resolveConfiguredGatewayModel();
-    const allowedModelIds = resolveManagedGatewayKeyModelIds();
+    const allowedModelIds = resolveManagedGatewayVisibleModelIds();
+    const keyEntitlementModelIds = resolveManagedGatewayKeyModelIds();
     const providerId = resolveConfiguredProviderId(defaultModelId);
     await this.cleanupLegacyLocalDeployments(ownerUserId);
     const existing = await this.storeService.getLocalGatewayCredentialAsync(ownerUserId, resolvedAccountScopeId);
@@ -138,6 +140,7 @@ export class RuntimeService {
       baseUrl,
       defaultModelId,
       allowedModelIds,
+      keyEntitlementModelIds,
       existing: activeCredential,
       localDeviceId: input.localDeviceId?.trim() || undefined,
       localDeviceLabel: input.localDeviceLabel?.trim() || undefined,
@@ -185,6 +188,7 @@ export class RuntimeService {
     baseUrl: string;
     defaultModelId: string;
     allowedModelIds: string[];
+    keyEntitlementModelIds: string[];
     existing: LocalGatewayCredentialRecord | null;
     localDeviceId?: string;
     localDeviceLabel?: string;
@@ -208,6 +212,7 @@ export class RuntimeService {
         key: existing.secretKey,
         maxBudget: targetBudget,
         blocked: shouldBlock,
+        models: input.keyEntitlementModelIds,
       });
 
       const nextRecord: LocalGatewayCredentialRecord = {
@@ -223,6 +228,7 @@ export class RuntimeService {
           localDeviceId: input.localDeviceId,
           localDeviceLabel: input.localDeviceLabel,
           platform: input.platform,
+          keyEntitlementModelIds: input.keyEntitlementModelIds,
         },
       };
       return this.storeService.upsertLocalGatewayCredential(nextRecord);
@@ -239,6 +245,7 @@ export class RuntimeService {
       baseUrl: string;
       defaultModelId: string;
       allowedModelIds: string[];
+      keyEntitlementModelIds: string[];
       localDeviceId?: string;
       localDeviceLabel?: string;
       platform?: string;
@@ -249,7 +256,7 @@ export class RuntimeService {
     const initialBudget = Math.round(Math.max(wallet.balanceCny, 0) * 1_000_000) / 1_000_000;
     const keyAlias = `local:${input.userId}:${input.accountScopeId}:${Date.now().toString(36)}${randomBytes(2).toString("hex")}`;
     const generated = await this.liteLlmProxyService.generateVirtualKey({
-      models: input.allowedModelIds,
+      models: input.keyEntitlementModelIds,
       maxBudget: initialBudget,
       keyAlias,
       metadata: {
@@ -302,6 +309,7 @@ export class RuntimeService {
         localDeviceId: input.localDeviceId,
         localDeviceLabel: input.localDeviceLabel,
         platform: input.platform,
+        keyEntitlementModelIds: input.keyEntitlementModelIds,
       },
     });
   }

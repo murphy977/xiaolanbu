@@ -164,7 +164,7 @@ export function resolveConfiguredGatewayModel() {
   return catalog.find((item) => item.isDefault)?.id || catalog[0]?.id || "gpt-5.2";
 }
 
-export function resolveManagedGatewayKeyModelIds() {
+export function resolveManagedGatewayVisibleModelIds() {
   const catalogModelIds = Array.from(
     new Set(
       resolveGatewayModelCatalog()
@@ -178,6 +178,35 @@ export function resolveManagedGatewayKeyModelIds() {
   }
 
   return [resolveConfiguredGatewayModel()];
+}
+
+function resolveManagedGatewaySupportModelIds() {
+  const rawConfigured =
+    process.env.XLB_GATEWAY_SUPPORT_MODELS?.trim() ??
+    process.env.XLB_GATEWAY_EMBEDDING_MODEL?.trim() ??
+    "text-embedding-3-small";
+
+  if (!rawConfigured) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      rawConfigured
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+export function resolveManagedGatewayKeyModelIds() {
+  return Array.from(
+    new Set([
+      ...resolveManagedGatewayVisibleModelIds(),
+      ...resolveManagedGatewaySupportModelIds(),
+    ]),
+  );
 }
 
 export function resolveConfiguredProviderId(modelId?: string | null) {
