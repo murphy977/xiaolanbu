@@ -1731,6 +1731,7 @@ export class DeploymentsService {
     const message = error instanceof Error ? error.message : String(error);
 
     return [
+      "Zone.NotOnSale",
       "OperationDenied.NoStock",
       "InvalidResourceType.NotSupported",
       "InvalidInstanceType.NotSupportDiskCategory",
@@ -1748,6 +1749,10 @@ export class DeploymentsService {
 
   private describeProvisioningError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes("Zone.NotOnSale")) {
+      return "当前可用区该资源已停售或暂不可用";
+    }
 
     if (message.includes("OperationDenied.NoStock")) {
       return "当前可用区库存不足";

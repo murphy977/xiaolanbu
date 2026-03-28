@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import { HttpException, Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConnectionOptions, JobsOptions, Queue, QueueEvents } from "bullmq";
 import IORedis, { Redis } from "ioredis";
 
@@ -91,7 +91,15 @@ export class QueueService implements OnModuleDestroy {
     });
     const events = this.getDeploymentQueueEvents();
     const timeoutMs = this.readDeploymentJobTimeoutMs();
-    return (await job.waitUntilFinished(events, timeoutMs)) as T;
+    try {
+      return (await job.waitUntilFinished(events, timeoutMs)) as T;
+    } catch (error) {
+      const parsed = this.parseSerializedHttpError(error);
+      if (parsed) {
+        throw parsed;
+      }
+      throw error;
+    }
   }
 
   async enqueueBillingJobIfIdle(
@@ -199,5 +207,22 @@ export class QueueService implements OnModuleDestroy {
   private readDeploymentJobTimeoutMs() {
     const value = Number(process.env.XLB_DEPLOYMENT_JOB_TIMEOUT_MS ?? "900000");
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 900000;
+  }
+
+  private parseSerializedHttpError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith("{")) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(message);
+      if (!parsed || parsed.__xlbHttpError !== true || !Number.isFinite(parsed.statusCode)) {
+        return null;
+      }
+      return new HttpException(parsed.response ?? parsed.message ?? "Request failed", parsed.statusCode);
+    } catch {
+      return null;
+    }
   }
 }

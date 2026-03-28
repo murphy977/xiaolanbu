@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Job, Worker } from "bullmq";
 
 import {
@@ -56,30 +56,44 @@ export class DeploymentJobWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleJob(job: Job) {
-    switch (job.name) {
-      case DEPLOYMENT_CREATE_JOB:
-        return this.deploymentsService.createDeployment(job.data as any);
-      case DEPLOYMENT_UPDATE_STATUS_JOB:
-        return this.deploymentsService.updateDeploymentStatus(
-          String(job.data.deploymentId ?? ""),
-          job.data.status as any,
+    try {
+      switch (job.name) {
+        case DEPLOYMENT_CREATE_JOB:
+          return this.deploymentsService.createDeployment(job.data as any);
+        case DEPLOYMENT_UPDATE_STATUS_JOB:
+          return this.deploymentsService.updateDeploymentStatus(
+            String(job.data.deploymentId ?? ""),
+            job.data.status as any,
+          );
+        case DEPLOYMENT_START_JOB:
+          return this.deploymentsService.startDeployment(String(job.data.deploymentId ?? ""));
+        case DEPLOYMENT_STOP_JOB:
+          return this.deploymentsService.stopDeployment(String(job.data.deploymentId ?? ""));
+        case DEPLOYMENT_RESTART_JOB:
+          return this.deploymentsService.restartDeployment(String(job.data.deploymentId ?? ""));
+        case DEPLOYMENT_REFRESH_NATIVE_RESPONSES_JOB:
+          return this.deploymentsService.refreshDeploymentNativeResponses(
+            String(job.data.deploymentId ?? ""),
+          );
+        case DEPLOYMENT_DESTROY_JOB:
+          return this.deploymentsService.destroyDeployment(String(job.data.deploymentId ?? ""));
+        case DEPLOYMENT_LOCAL_BOOTSTRAP_JOB:
+          return this.deploymentsService.getLocalDeploymentBootstrap(String(job.data.deploymentId ?? ""));
+        default:
+          throw new Error(`Unsupported deployment job: ${job.name}`);
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw new Error(
+          JSON.stringify({
+            __xlbHttpError: true,
+            statusCode: error.getStatus(),
+            response: error.getResponse(),
+          }),
         );
-      case DEPLOYMENT_START_JOB:
-        return this.deploymentsService.startDeployment(String(job.data.deploymentId ?? ""));
-      case DEPLOYMENT_STOP_JOB:
-        return this.deploymentsService.stopDeployment(String(job.data.deploymentId ?? ""));
-      case DEPLOYMENT_RESTART_JOB:
-        return this.deploymentsService.restartDeployment(String(job.data.deploymentId ?? ""));
-      case DEPLOYMENT_REFRESH_NATIVE_RESPONSES_JOB:
-        return this.deploymentsService.refreshDeploymentNativeResponses(
-          String(job.data.deploymentId ?? ""),
-        );
-      case DEPLOYMENT_DESTROY_JOB:
-        return this.deploymentsService.destroyDeployment(String(job.data.deploymentId ?? ""));
-      case DEPLOYMENT_LOCAL_BOOTSTRAP_JOB:
-        return this.deploymentsService.getLocalDeploymentBootstrap(String(job.data.deploymentId ?? ""));
-      default:
-        throw new Error(`Unsupported deployment job: ${job.name}`);
+      }
+
+      throw error;
     }
   }
 

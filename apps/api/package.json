@@ -10,6 +10,7 @@
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.main.js",
     "test:account-billing": "npm run build && node --test test/account-billing.test.cjs",
+    "test:deployment-cloud-fallback": "npm run build && node --test test/deployment-cloud-fallback.test.cjs",
     "test:local-device-deployments": "npm run build && node --test test/local-device-deployments.test.cjs"
   },
   "dependencies": {
