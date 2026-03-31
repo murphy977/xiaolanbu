@@ -41,6 +41,29 @@ contextBridge.exposeInMainWorld("xiaolanbu", {
   listCommerceRuns: () => ipcRenderer.invoke("xiaolanbu:list-commerce-runs"),
   exportCommerceRun: (payload) => ipcRenderer.invoke("xiaolanbu:export-commerce-run", payload),
   openCommerceArtifact: (payload) => ipcRenderer.invoke("xiaolanbu:open-commerce-artifact", payload),
+  listSupportPlatforms: () => ipcRenderer.invoke("xiaolanbu:list-support-platforms"),
+  getSupportPlatformStatus: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:get-support-platform-status", payload),
+  getSupportSetupStatus: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:get-support-setup-status", payload),
+  pullSupportInbox: (payload) => ipcRenderer.invoke("xiaolanbu:pull-support-inbox", payload),
+  getSupportThread: (payload) => ipcRenderer.invoke("xiaolanbu:get-support-thread", payload),
+  runSupportTriage: (payload) => ipcRenderer.invoke("xiaolanbu:run-support-triage", payload),
+  approveSupportReply: (payload) => ipcRenderer.invoke("xiaolanbu:approve-support-reply", payload),
+  approveSupportAction: (payload) => ipcRenderer.invoke("xiaolanbu:approve-support-action", payload),
+  listSupportAudit: (payload) => ipcRenderer.invoke("xiaolanbu:list-support-audit", payload),
+  setSupportAutomationRules: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:set-support-automation-rules", payload),
+  requestSupportAccessibility: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:request-support-accessibility", payload),
+  confirmSupportSetupStep: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:confirm-support-setup-step", payload),
+  startSupportPlatformMonitor: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:start-support-platform-monitor", payload),
+  stopSupportPlatformMonitor: (payload) =>
+    ipcRenderer.invoke("xiaolanbu:stop-support-platform-monitor", payload),
+  bindSupportStore: (payload) => ipcRenderer.invoke("xiaolanbu:bind-support-store", payload),
+  inspectSupportUI: (payload) => ipcRenderer.invoke("xiaolanbu:inspect-support-ui", payload),
   subscribeGatewayChatEvents: (listener) => {
     if (typeof listener !== "function") {
       return () => {};

@@ -257,7 +257,7 @@ test("runtime local bootstrap reuses one credential per account scope and deploy
   assert.ok(Array.isArray(first.allowedModelIds));
   assert.ok(first.allowedModelIds.includes(first.defaultModelId));
   assert.ok(
-    !first.allowedModelIds.includes("text-embedding-3-small"),
+    !first.allowedModelIds.includes("text-embedding-v4"),
     "embedding support models must not pollute the visible chat model list",
   );
   assert.ok(Array.isArray(first.modelCatalog));
@@ -270,7 +270,7 @@ test("runtime local bootstrap reuses one credential per account scope and deploy
   assert.equal(keyInfoResponse.status, 200);
   const keyInfo = await keyInfoResponse.json();
   assert.ok(
-    Array.isArray(keyInfo.info?.models) && keyInfo.info.models.includes("text-embedding-3-small"),
+    Array.isArray(keyInfo.info?.models) && keyInfo.info.models.includes("text-embedding-v4"),
     "managed local key should include the embedding model entitlement for OpenClaw memory search",
   );
 

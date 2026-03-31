@@ -66,6 +66,54 @@ async function main() {
     case "run-chat-task":
       result = await __helpers.runLocalGatewayChatTask(payload);
       break;
+    case "list-support-platforms":
+      result = await __helpers.listSupportPlatforms();
+      break;
+    case "get-support-platform-status":
+      result = await __helpers.getSupportPlatformStatus(payload);
+      break;
+    case "get-support-setup-status":
+      result = await __helpers.getSupportSetupStatus(payload);
+      break;
+    case "pull-support-inbox":
+      result = await __helpers.pullSupportInbox(payload);
+      break;
+    case "get-support-thread":
+      result = await __helpers.getSupportThread(payload);
+      break;
+    case "run-support-triage":
+      result = await __helpers.runSupportTriage(payload);
+      break;
+    case "approve-support-reply":
+      result = await __helpers.approveSupportReplyAction(payload);
+      break;
+    case "approve-support-action":
+      result = await __helpers.approveSupportActionRequest(payload);
+      break;
+    case "list-support-audit":
+      result = await __helpers.listSupportAudit(payload);
+      break;
+    case "set-support-rules":
+      result = await __helpers.setSupportAutomationRules(payload);
+      break;
+    case "request-support-accessibility":
+      result = await __helpers.requestSupportAccessibility(payload);
+      break;
+    case "confirm-support-setup-step":
+      result = await __helpers.confirmSupportSetupStep(payload);
+      break;
+    case "start-support-monitor":
+      result = await __helpers.startSupportPlatformMonitor(payload);
+      break;
+    case "stop-support-monitor":
+      result = await __helpers.stopSupportPlatformMonitor(payload);
+      break;
+    case "bind-support-store":
+      result = await __helpers.bindSupportStore(payload);
+      break;
+    case "inspect-support-ui":
+      result = await __helpers.inspectSupportUI(payload);
+      break;
     case "smoke-chat":
       result = await runLocalChatSmokeTest();
       break;

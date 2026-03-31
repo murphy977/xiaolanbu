@@ -25,7 +25,7 @@ const VIEW_META = {
   },
   commerce: {
     eyebrow: "Commerce Team",
-    title: "CEO + 9 个部门 agent，直接挂在本地 OpenClaw 上协作。",
+    title: "电商团队工作台，把直聊、流程和产物收进同一处。",
   },
   membership: {
     eyebrow: "Wallet & Billing",
@@ -128,6 +128,25 @@ const DEFAULT_COMMERCE_BRIEF_FORM = {
   channels: "抖音, 小红书",
   assets: "",
   outputLanguage: "zh-CN",
+};
+const DEFAULT_SUPPORT_RULES_FORM = {
+  enabled: false,
+  pollIntervalMs: "45000",
+  autoReplyLowRisk: true,
+  autoRunTriage: true,
+  requireHumanForHighRisk: true,
+};
+const DEFAULT_SUPPORT_SETUP_STATUS = {
+  platform: "taobao",
+  helperAvailable: false,
+  accessibilityGranted: false,
+  qianniuInstalled: false,
+  qianniuRunning: false,
+  checklist: {},
+  blockingReason: "",
+  status: "setup-required",
+  storeProfiles: [],
+  windowTitles: [],
 };
 const CLOUD_TUNNEL_DASHBOARD_PORT = 28789;
 const CLOUD_TUNNEL_BROWSER_CONTROL_PORT = 28791;
@@ -805,6 +824,134 @@ async function openCommerceArtifact(payload) {
   return bridge.openCommerceArtifact(payload);
 }
 
+async function listSupportPlatforms() {
+  const bridge = getAppBridge();
+  if (!bridge?.listSupportPlatforms) {
+    return { ok: false, error: "当前桌面端不支持客服平台列表。" };
+  }
+  return bridge.listSupportPlatforms();
+}
+
+async function getSupportPlatformStatus(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.getSupportPlatformStatus) {
+    return { ok: false, error: "当前桌面端不支持客服平台状态查询。" };
+  }
+  return bridge.getSupportPlatformStatus(payload);
+}
+
+async function getSupportSetupStatus(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.getSupportSetupStatus) {
+    return { ok: false, error: "当前桌面端不支持千牛接入状态检测。" };
+  }
+  return bridge.getSupportSetupStatus(payload);
+}
+
+async function pullSupportInbox(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.pullSupportInbox) {
+    return { ok: false, error: "当前桌面端不支持客服队列拉取。" };
+  }
+  return bridge.pullSupportInbox(payload);
+}
+
+async function getSupportThread(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.getSupportThread) {
+    return { ok: false, error: "当前桌面端不支持客服会话读取。" };
+  }
+  return bridge.getSupportThread(payload);
+}
+
+async function runSupportTriage(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.runSupportTriage) {
+    return { ok: false, error: "当前桌面端不支持客服分诊。" };
+  }
+  return bridge.runSupportTriage(payload);
+}
+
+async function approveSupportReply(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.approveSupportReply) {
+    return { ok: false, error: "当前桌面端不支持客服回复发送。" };
+  }
+  return bridge.approveSupportReply(payload);
+}
+
+async function approveSupportAction(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.approveSupportAction) {
+    return { ok: false, error: "当前桌面端不支持客服动作审批。" };
+  }
+  return bridge.approveSupportAction(payload);
+}
+
+async function listSupportAudit(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.listSupportAudit) {
+    return { ok: false, error: "当前桌面端不支持客服审计记录。" };
+  }
+  return bridge.listSupportAudit(payload);
+}
+
+async function setSupportAutomationRules(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.setSupportAutomationRules) {
+    return { ok: false, error: "当前桌面端不支持客服自动化规则保存。" };
+  }
+  return bridge.setSupportAutomationRules(payload);
+}
+
+async function requestSupportAccessibility(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.requestSupportAccessibility) {
+    return { ok: false, error: "当前桌面端不支持辅助功能授权引导。" };
+  }
+  return bridge.requestSupportAccessibility(payload);
+}
+
+async function confirmSupportSetupStep(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.confirmSupportSetupStep) {
+    return { ok: false, error: "当前桌面端不支持千牛接入步骤确认。" };
+  }
+  return bridge.confirmSupportSetupStep(payload);
+}
+
+async function startSupportPlatformMonitor(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.startSupportPlatformMonitor) {
+    return { ok: false, error: "当前桌面端不支持千牛监听启动。" };
+  }
+  return bridge.startSupportPlatformMonitor(payload);
+}
+
+async function stopSupportPlatformMonitor(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.stopSupportPlatformMonitor) {
+    return { ok: false, error: "当前桌面端不支持千牛监听暂停。" };
+  }
+  return bridge.stopSupportPlatformMonitor(payload);
+}
+
+async function bindSupportStore(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.bindSupportStore) {
+    return { ok: false, error: "当前桌面端不支持千牛店铺绑定。" };
+  }
+  return bridge.bindSupportStore(payload);
+}
+
+async function inspectSupportUI(payload) {
+  const bridge = getAppBridge();
+  if (!bridge?.inspectSupportUI) {
+    return { ok: false, error: "当前桌面端不支持千牛 UI 检测。" };
+  }
+  return bridge.inspectSupportUI(payload);
+}
+
 function subscribeGatewayChatEvents(listener) {
   const bridge = getAppBridge();
   if (!bridge?.subscribeGatewayChatEvents) {
@@ -820,6 +967,14 @@ function createAttachmentId() {
 
 function createQueueItemId() {
   return `queue-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function buildSupportRulesForm(rules) {
+  return {
+    ...DEFAULT_SUPPORT_RULES_FORM,
+    ...(rules && typeof rules === "object" ? rules : {}),
+    pollIntervalMs: String(rules?.pollIntervalMs ?? DEFAULT_SUPPORT_RULES_FORM.pollIntervalMs),
+  };
 }
 
 function isChatStopCommand(text) {
@@ -1398,7 +1553,7 @@ function buildSyntheticLocalDeployment(localRuntimeStatus, preferredScopeId = ""
     normalizeLocalBootstrapModelCandidate(localRuntimeStatus?.currentModelId) ||
     normalizeLocalBootstrapModelCandidate(bootstrapPayload?.modelId) ||
     normalizeLocalBootstrapModelCandidate(bootstrapPayload?.defaultModelId) ||
-    "gpt-5.2";
+    "qwen35-plus";
   const dashboardUrl =
     (typeof localRuntimeStatus?.dashboardUrl === "string" && localRuntimeStatus.dashboardUrl.trim()) ||
     (typeof bootstrapPayload?.dashboardUrl === "string" && bootstrapPayload.dashboardUrl.trim()) ||
@@ -1535,7 +1690,7 @@ function resolveLocalBootstrapModelId(deployment, payload = null) {
     normalizeLocalBootstrapModelCandidate(metadata.localGatewayModelId) ||
     normalizeLocalBootstrapModelCandidate(gatewayKey.modelId) ||
     normalizeLocalBootstrapModelCandidate(metadata.modelId) ||
-    "gpt-5.2"
+    "qwen35-plus"
   );
 }
 
@@ -1560,6 +1715,71 @@ function resolveLocalBootstrapAllowedModelIds(deployment, payload = null) {
   }
   push(resolveLocalBootstrapModelId(deployment, payload));
   return candidates;
+}
+
+function filterGatewayModelCatalogByAllowedModelIds(items, allowedModelIds = []) {
+  const normalizedItems = normalizeGatewayModelCatalog(items);
+  const allowed = new Set(
+    (Array.isArray(allowedModelIds) ? allowedModelIds : [])
+      .map((item) => normalizeLocalBootstrapModelCandidate(item))
+      .filter(Boolean),
+  );
+  if (!allowed.size) {
+    return normalizedItems;
+  }
+
+  const filtered = normalizedItems.filter((item) =>
+    allowed.has(normalizeLocalBootstrapModelCandidate(item?.id)),
+  );
+  return filtered.length ? filtered : normalizedItems;
+}
+
+function resolveScopedGatewayModelCatalog(items, deployment, localRuntimeStatus = null) {
+  if (deployment?.mode !== "local") {
+    return normalizeGatewayModelCatalog(items);
+  }
+
+  const allowedModelIds = resolveLocalBootstrapAllowedModelIds(
+    deployment ?? buildSyntheticLocalDeployment(localRuntimeStatus),
+  );
+  return filterGatewayModelCatalogByAllowedModelIds(items, allowedModelIds);
+}
+
+function applyRuntimeManagedModelSelection(basePayload, runtimeResult) {
+  if (!basePayload || typeof basePayload !== "object") {
+    return basePayload;
+  }
+
+  const effectivePayload =
+    runtimeResult?.effectivePayload && typeof runtimeResult.effectivePayload === "object"
+      ? runtimeResult.effectivePayload
+      : null;
+  const resolvedModelId =
+    normalizeLocalBootstrapModelCandidate(runtimeResult?.modelId) ||
+    normalizeLocalBootstrapModelCandidate(effectivePayload?.modelId) ||
+    normalizeLocalBootstrapModelCandidate(effectivePayload?.concreteModelId) ||
+    normalizeLocalBootstrapModelCandidate(basePayload?.modelId);
+  const resolvedAllowedModelIds = Array.isArray(runtimeResult?.allowedModelIds)
+    ? runtimeResult.allowedModelIds
+    : Array.isArray(effectivePayload?.allowedModelIds)
+      ? effectivePayload.allowedModelIds
+      : basePayload?.allowedModelIds;
+
+  return {
+    ...basePayload,
+    ...(effectivePayload ?? {}),
+    modelId: resolvedModelId || basePayload.modelId,
+    concreteModelId: resolvedModelId || basePayload.concreteModelId || basePayload.modelId,
+    requestedModelId:
+      normalizeLocalBootstrapModelCandidate(runtimeResult?.requestedModelId) ||
+      normalizeLocalBootstrapModelCandidate(effectivePayload?.requestedModelId) ||
+      basePayload.requestedModelId ||
+      resolvedModelId ||
+      basePayload.modelId,
+    allowedModelIds: Array.isArray(resolvedAllowedModelIds)
+      ? resolvedAllowedModelIds
+      : basePayload.allowedModelIds,
+  };
 }
 
 function localBootstrapPayloadEquals(left, right) {
@@ -3122,6 +3342,7 @@ function AssistantView({
   actionPendingId,
   actionPendingType,
   onClearWorkspaceFeedback,
+  onResolvePendingModelSwitch,
 }) {
   const threadRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -3139,6 +3360,7 @@ function AssistantView({
   const historyRefreshTimersRef = useRef([]);
   const historyLoadVersionRef = useRef(0);
   const chatSourceIdentityRef = useRef("");
+  const localSessionModelAutoAlignSignatureRef = useRef("");
   const lastKnownLocalChatAccessRef = useRef({
     deploymentId: "",
     dashboardUrl: "",
@@ -3147,6 +3369,8 @@ function AssistantView({
   const shouldAutoScrollRef = useRef(true);
   const latestAssistantStateRef = useRef(null);
   const activeSessionSelectionDeploymentIdRef = useRef("");
+  const incomingChatEventHandlerRef = useRef(() => {});
+  const incomingAgentEventHandlerRef = useRef(() => {});
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState("");
   const [chatQueue, setChatQueue] = useState([]);
@@ -3232,6 +3456,10 @@ function AssistantView({
     (cloudDirectReady || cloudTunnelReady ? cloudDeployment : null) ??
     nonForeignFallbackDeployment ??
     null;
+  const selectableGatewayModels = useMemo(
+    () => resolveScopedGatewayModelCatalog(availableGatewayModels, primaryDeployment, localRuntimeStatus),
+    [availableGatewayModels, localRuntimeStatus, primaryDeployment],
+  );
   const publicIp = primaryDeployment?.publicIpAddress?.[0] ?? "";
   const isLocalDeployment = primaryDeployment?.mode === "local";
   const modelSwitchPending =
@@ -3338,16 +3566,16 @@ function AssistantView({
     localRuntimeModelId ||
     resolveDeploymentGatewayModelId(
       primaryDeployment,
-      resolveDefaultGatewayModelId(availableGatewayModels),
+      resolveDefaultGatewayModelId(selectableGatewayModels),
     );
   const currentDeploymentModel =
-    findGatewayModelCatalogItem(availableGatewayModels, currentDeploymentModelId) ?? null;
+    findGatewayModelCatalogItem(selectableGatewayModels, currentDeploymentModelId) ?? null;
   const currentDeploymentModelLabel = currentDeploymentModel
     ? formatGatewayModelLabel(currentDeploymentModel)
     : currentDeploymentModelId || "未识别模型";
   const [assistantModelDraft, setAssistantModelDraft] = useState(currentDeploymentModelId);
   const pendingDeploymentModel =
-    findGatewayModelCatalogItem(availableGatewayModels, assistantModelDraft) ?? null;
+    findGatewayModelCatalogItem(selectableGatewayModels, assistantModelDraft) ?? null;
   const pendingDeploymentModelLabel = pendingDeploymentModel
     ? formatGatewayModelLabel(pendingDeploymentModel)
     : assistantModelDraft || currentDeploymentModelLabel;
@@ -4176,6 +4404,9 @@ function AssistantView({
     }
   };
 
+  incomingChatEventHandlerRef.current = handleIncomingChatEvent;
+  incomingAgentEventHandlerRef.current = handleIncomingAgentEvent;
+
   const handlePrimaryAction = () => {
     if (canOpenNativeChat) {
       return;
@@ -4231,6 +4462,15 @@ function AssistantView({
           return;
         }
 
+        const resolvedModelId =
+          typeof result?.modelId === "string" && result.modelId.trim()
+            ? result.modelId.trim()
+            : nextModelId;
+        setGatewaySessionModelOverrides((current) => ({
+          ...(current && typeof current === "object" ? current : {}),
+          [chatSessionKey || "main"]: resolvedModelId,
+        }));
+        setAssistantModelDraft(resolvedModelId);
         scheduleSilentHistoryRefresh([80, 320, 900]);
       })
       .catch(() => {
@@ -4297,6 +4537,11 @@ function AssistantView({
 
   const handleSendChat = async (messageOverride, options = {}) => {
     if (!activeChatUrl) {
+      return;
+    }
+
+    if (modelSwitchPending) {
+      showRuntimeNotice("模型切换中，请等待当前会话切换完成后再发送。", 3000);
       return;
     }
 
@@ -4459,12 +4704,12 @@ function AssistantView({
       }
 
       if (frame.event === "chat") {
-        handleIncomingChatEvent(frame.payload);
+        incomingChatEventHandlerRef.current(frame.payload);
         return;
       }
 
       if (frame.event === "agent") {
-        handleIncomingAgentEvent(frame.payload);
+        incomingAgentEventHandlerRef.current(frame.payload);
       }
     });
 
@@ -4524,6 +4769,109 @@ function AssistantView({
   useEffect(() => {
     setAssistantModelDraft(currentDeploymentModelId);
   }, [currentDeploymentModelId, primaryDeployment?.id]);
+
+  useEffect(() => {
+    if (
+      !isLocalDeployment ||
+      !canOpenNativeChat ||
+      !primaryDeployment?.id ||
+      !chatSessionKey ||
+      !localRuntimeModelId ||
+      modelSwitchPending ||
+      chatSending
+    ) {
+      if (!modelSwitchPending) {
+        localSessionModelAutoAlignSignatureRef.current = "";
+      }
+      return;
+    }
+
+    const actualSessionModelId = resolveActiveGatewaySessionModelId(activeGatewaySession);
+    if (!actualSessionModelId || actualSessionModelId === localRuntimeModelId) {
+      localSessionModelAutoAlignSignatureRef.current = "";
+      return;
+    }
+
+    const signature = [
+      primaryDeployment.id,
+      chatSessionKey,
+      actualSessionModelId,
+      localRuntimeModelId,
+    ].join("|");
+    if (localSessionModelAutoAlignSignatureRef.current === signature) {
+      return;
+    }
+
+    localSessionModelAutoAlignSignatureRef.current = signature;
+    Promise.resolve(
+      onDeploymentModelChange?.(primaryDeployment, localRuntimeModelId, {
+        sessionKey: chatSessionKey,
+        currentSessionModelId: actualSessionModelId,
+      }),
+    )
+      .then((result) => {
+        if (result?.ok !== false) {
+          scheduleSilentHistoryRefresh([80, 320, 900]);
+        }
+      })
+      .finally(() => {
+        if (localSessionModelAutoAlignSignatureRef.current === signature) {
+          localSessionModelAutoAlignSignatureRef.current = "";
+        }
+      });
+  }, [
+    activeGatewaySession,
+    canOpenNativeChat,
+    chatSending,
+    chatSessionKey,
+    isLocalDeployment,
+    localRuntimeModelId,
+    modelSwitchPending,
+    onDeploymentModelChange,
+    primaryDeployment,
+    scheduleSilentHistoryRefresh,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isLocalDeployment ||
+      !modelSwitchPending ||
+      !primaryDeployment?.id ||
+      !assistantModelDraft ||
+      !localRuntimeStatus?.ready
+    ) {
+      return;
+    }
+
+    const normalizedDraftModelId =
+      normalizeLocalBootstrapModelCandidate(assistantModelDraft);
+    const actualSessionModelId =
+      normalizeLocalBootstrapModelCandidate(activeGatewaySessionModelId);
+    const hasKnownSession = Boolean(activeGatewaySession?.key) || gatewaySessions.length > 0;
+    const runtimeMatchesDraft =
+      normalizeLocalBootstrapModelCandidate(localRuntimeModelId) === normalizedDraftModelId;
+    const sessionMatchesDraft =
+      hasKnownSession &&
+      Boolean(actualSessionModelId) &&
+      actualSessionModelId === normalizedDraftModelId;
+
+    if (!runtimeMatchesDraft || !sessionMatchesDraft) {
+      return;
+    }
+
+    onResolvePendingModelSwitch?.(primaryDeployment.id);
+  }, [
+    activeGatewaySession?.key,
+    activeGatewaySessionModelId,
+    assistantModelDraft,
+    gatewaySessions.length,
+    isLocalDeployment,
+    localRuntimeModelId,
+    localRuntimeStatus?.ready,
+    modelSwitchPending,
+    onResolvePendingModelSwitch,
+    primaryDeployment?.id,
+  ]);
 
   useEffect(() => {
     const nextDeploymentId =
@@ -4702,12 +5050,12 @@ function AssistantView({
                           onChange={handleAssistantModelChange}
                           disabled={
                             !primaryDeployment ||
-                            availableGatewayModels.length === 0 ||
+                            selectableGatewayModels.length === 0 ||
                             chatSending ||
                             modelSwitchPending
                           }
                         >
-                          {availableGatewayModels.map((item) => (
+                          {selectableGatewayModels.map((item) => (
                             <option key={item.id} value={item.id}>
                               {formatGatewayModelLabel(item)}
                             </option>
@@ -4801,6 +5149,10 @@ function AssistantView({
                                 return;
                               }
                               event.preventDefault();
+                              if (modelSwitchPending) {
+                                showRuntimeNotice("模型切换中，请等待当前会话切换完成后再发送。", 3000);
+                                return;
+                              }
                               void handleSendChat();
                             }}
                             disabled={!activeChatUrl}
@@ -4856,7 +5208,7 @@ function AssistantView({
                                   ? void handleAbortChat()
                                   : void handleSendChat("/new", { restoreDraft: true })
                               }
-                              disabled={!activeChatUrl}
+                              disabled={!activeChatUrl || (!canAbortChat && modelSwitchPending)}
                             >
                               <ComposerIcon>
                                 {canAbortChat ? <StopIcon /> : <PlusIcon />}
@@ -4880,7 +5232,7 @@ function AssistantView({
                               title={chatSending ? "加入发送队列" : "发送消息"}
                               aria-label={chatSending ? "加入发送队列" : "发送消息"}
                               onClick={() => void handleSendChat()}
-                              disabled={!activeChatUrl}
+                              disabled={!activeChatUrl || modelSwitchPending}
                             >
                               <ComposerIcon>
                                 <SendIcon />
@@ -5002,6 +5354,8 @@ function CommerceView({
   );
   const loadVersionRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
+  const incomingChatEventHandlerRef = useRef(() => {});
+  const incomingAgentEventHandlerRef = useRef(() => {});
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState("");
   const [teamNotice, setTeamNotice] = useState("");
@@ -5036,6 +5390,27 @@ function CommerceView({
   const [commerceRuns, setCommerceRuns] = useState([]);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [selectedRun, setSelectedRun] = useState(null);
+  const [supportPlatforms, setSupportPlatforms] = useState([]);
+  const [selectedSupportPlatformId, setSelectedSupportPlatformId] = useState("taobao");
+  const [supportRulesForm, setSupportRulesForm] = useState(DEFAULT_SUPPORT_RULES_FORM);
+  const [supportThreads, setSupportThreads] = useState([]);
+  const [selectedSupportThreadId, setSelectedSupportThreadId] = useState("");
+  const [selectedSupportThread, setSelectedSupportThread] = useState(null);
+  const [supportDecision, setSupportDecision] = useState(null);
+  const [supportAudit, setSupportAudit] = useState([]);
+  const [supportSetupStatus, setSupportSetupStatus] = useState(DEFAULT_SUPPORT_SETUP_STATUS);
+  const [supportUiInspect, setSupportUiInspect] = useState(null);
+  const [supportStoreDraft, setSupportStoreDraft] = useState({
+    storeId: "",
+    storeLabel: "",
+    shopAlias: "",
+  });
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportQueueLoading, setSupportQueueLoading] = useState(false);
+  const [supportSavePending, setSupportSavePending] = useState(false);
+  const [supportActionPending, setSupportActionPending] = useState(false);
+  const [supportError, setSupportError] = useState("");
+  const [supportNotice, setSupportNotice] = useState("");
   const availableGatewayModels = useMemo(
     () => normalizeGatewayModelCatalog(modelCatalog),
     [modelCatalog],
@@ -5044,6 +5419,18 @@ function CommerceView({
     commerceAgents.find((entry) => entry.id === selectedAgentId) ?? null;
   const selectedWorkflow =
     commerceWorkflows.find((entry) => entry.id === selectedWorkflowId) ?? null;
+  const selectedSupportPlatform =
+    supportPlatforms.find((entry) => entry.id === selectedSupportPlatformId) ?? null;
+  const isTaobaoSupportPlatform = selectedSupportPlatformId === "taobao";
+  const supportSetupChecklist =
+    supportSetupStatus?.checklist && typeof supportSetupStatus.checklist === "object"
+      ? supportSetupStatus.checklist
+      : {};
+  const supportStoreProfiles = Array.isArray(supportSetupStatus?.storeProfiles)
+    ? supportSetupStatus.storeProfiles
+    : Array.isArray(selectedSupportPlatform?.storeProfiles)
+      ? selectedSupportPlatform.storeProfiles
+      : [];
   const normalizedSessions = useMemo(
     () => normalizeGatewaySessionsForChat(agentSessions, chatSessionKey),
     [agentSessions, chatSessionKey],
@@ -5087,6 +5474,69 @@ function CommerceView({
   const localReady = Boolean(localRuntimeStatus?.ready);
   const localConfigured = Boolean(localRuntimeStatus?.localApiKeyConfigured);
   const canInitializeCommerce = localReady && localConfigured;
+  const directChatAgentCount = commerceAgents.filter((entry) => entry.status !== "coming-soon").length;
+  const activeWorkflowCount = commerceWorkflows.filter((entry) => entry.status !== "coming-soon").length;
+  const completedRunCount = commerceRuns.filter((entry) => entry.status === "succeeded").length;
+  const latestRun = selectedRun ?? commerceRuns[0] ?? null;
+  const latestRunLabel =
+    latestRun?.workflowLabel || latestRun?.workflowId || "等待第一次运行";
+  const supportQueueCount = supportThreads.filter((entry) => entry.status !== "replied").length;
+  const supportApprovalCount = supportThreads.filter((entry) => entry.status === "awaiting-human").length;
+  const workflowTargetAgent =
+    commerceAgents.find((entry) => entry.id === selectedWorkflow?.targetAgentId) ?? null;
+  const activeModeLabel =
+    panelMode === "chat" ? "部门直聊" : panelMode === "workflow" ? "结构化工作流" : "客服自动化";
+  const activePanelTitle =
+    panelMode === "chat"
+      ? selectedAgent?.label || (teamLoading ? "正在载入团队..." : "电商 Agent")
+      : panelMode === "workflow"
+        ? selectedWorkflow?.label || (teamLoading ? "正在载入工作流..." : "选择工作流")
+        : selectedSupportPlatform?.label || "客服自动化";
+  const activePanelSummary =
+    panelMode === "chat"
+      ? selectedAgent?.status === "coming-soon"
+        ? "Phase 1 先给你产出策略、清单和提示词，暂不直接触发视觉或视频生成。"
+        : selectedAgent?.summary ||
+          (teamLoading
+            ? "正在同步本地电商团队配置，加载完成后会恢复部门说明和默认模型。"
+            : "直接给当前部门下任务，产物不会和其他部门会话混在一起。")
+      : panelMode === "workflow"
+        ? selectedWorkflow?.description ||
+          (teamLoading
+            ? "正在同步工作流模板，加载完成后会显示完整链路说明和负责部门。"
+            : "把 brief 填清楚之后，桌面端会在本地 OpenClaw workspace 里编排运行。")
+        : selectedSupportPlatform?.description ||
+          "把平台连接、会话队列、AI 分诊和人工审批收进同一个客服执行面板。";
+  const activeModelLabel =
+    panelMode === "chat"
+      ? selectedAgent?.defaultModelId || (teamLoading ? "等待同步" : "--")
+      : panelMode === "workflow"
+        ? workflowTargetAgent?.defaultModelId ||
+          (selectedWorkflow?.status === "coming-soon"
+            ? "Phase 2"
+            : teamLoading
+              ? "等待同步"
+              : "自动分配")
+        : "customer-service-dept";
+  const selectedSupportHistory = Array.isArray(selectedSupportThread?.history)
+    ? selectedSupportThread.history
+    : [];
+  const selectedSupportRequestedActions = Array.isArray(selectedSupportThread?.requestedActions)
+    ? selectedSupportThread.requestedActions
+    : [];
+  const selectedSupportContext = selectedSupportThread?.context || null;
+  const supportPlatformStatusLabel =
+    selectedSupportPlatform?.status === "monitoring"
+      ? "监听中"
+      : selectedSupportPlatform?.status === "connected"
+      ? "已连接"
+      : selectedSupportPlatform?.status === "setup-required"
+        ? "等待接入"
+      : selectedSupportPlatform?.status === "analysis-only"
+        ? "只做探测"
+        : selectedSupportPlatform?.status === "error"
+          ? "连接异常"
+          : "未连接";
 
   const clearSmoothChatStreamTimer = () => {
     if (chatStreamFlushTimerRef.current) {
@@ -5188,6 +5638,136 @@ function CommerceView({
     setSelectedRun(result.run ?? null);
   };
 
+  const refreshSupportAudit = async (platformId = selectedSupportPlatformId) => {
+    const result = await listSupportAudit({
+      platform: platformId,
+      limit: 80,
+    });
+    if (result?.ok) {
+      setSupportAudit(Array.isArray(result.items) ? result.items : []);
+    }
+  };
+
+  const loadSupportSetupState = async (platformId = selectedSupportPlatformId) => {
+    if (!platformId || platformId !== "taobao") {
+      setSupportSetupStatus(DEFAULT_SUPPORT_SETUP_STATUS);
+      setSupportUiInspect(null);
+      return null;
+    }
+    const result = await getSupportSetupStatus({ platform: platformId });
+    if (!result?.ok) {
+      setSupportError(result?.error || "读取千牛接入状态失败。");
+      return null;
+    }
+    setSupportSetupStatus(result.setupStatus ?? DEFAULT_SUPPORT_SETUP_STATUS);
+    if (result.platform) {
+      setSupportPlatforms((current) =>
+        current.map((entry) => (entry.id === platformId ? result.platform : entry)),
+      );
+    }
+    return result;
+  };
+
+  const loadSupportThreadDetail = async (threadId, platformId = selectedSupportPlatformId) => {
+    if (!threadId || !platformId) {
+      setSelectedSupportThread(null);
+      setSupportDecision(null);
+      return;
+    }
+    const result = await getSupportThread({
+      platform: platformId,
+      threadId,
+    });
+    if (!result?.ok) {
+      setSupportError(result?.error || "读取客服会话失败。");
+      return;
+    }
+    setSelectedSupportThread(result.thread ?? null);
+    setSupportDecision(result.thread?.decision ?? null);
+  };
+
+  const loadSupportPlatformsAndQueue = async (options = {}) => {
+    const platformId =
+      typeof options.platformId === "string" && options.platformId.trim()
+        ? options.platformId.trim()
+        : selectedSupportPlatformId;
+    if (options.silent !== true) {
+      setSupportLoading(true);
+    }
+    const result = await listSupportPlatforms();
+    if (!result?.ok) {
+      setSupportError(result?.error || "读取客服平台状态失败。");
+      if (options.silent !== true) {
+        setSupportLoading(false);
+      }
+      return;
+    }
+    const platforms = Array.isArray(result.items) ? result.items : [];
+    setSupportPlatforms(platforms);
+    const resolvedPlatformId =
+      platforms.find((entry) => entry.id === platformId)?.id ||
+      platforms[0]?.id ||
+      "taobao";
+    setSelectedSupportPlatformId(resolvedPlatformId);
+    const resolvedPlatform = platforms.find((entry) => entry.id === resolvedPlatformId) ?? null;
+    setSupportStoreDraft({
+      storeId:
+        resolvedPlatform?.settings?.shopId ||
+        resolvedPlatform?.storeProfiles?.[0]?.storeId ||
+        "",
+      storeLabel:
+        resolvedPlatform?.settings?.storeLabel ||
+        resolvedPlatform?.storeProfiles?.[0]?.storeLabel ||
+        "",
+      shopAlias:
+        resolvedPlatform?.settings?.shopAlias ||
+        resolvedPlatform?.storeProfiles?.[0]?.shopAlias ||
+        "",
+    });
+    setSupportRulesForm(buildSupportRulesForm(result.rules));
+    const setupResult = await loadSupportSetupState(resolvedPlatformId);
+    if (
+      resolvedPlatformId === "taobao" &&
+      setupResult?.setupStatus?.blockingReason &&
+      options.forcePull !== true
+    ) {
+      setSupportThreads([]);
+      setSelectedSupportThreadId("");
+      setSelectedSupportThread(null);
+      setSupportDecision(null);
+      await refreshSupportAudit(resolvedPlatformId);
+      if (options.silent !== true) {
+        setSupportLoading(false);
+      }
+      return;
+    }
+    const inboxResult = await pullSupportInbox({
+      platform: resolvedPlatformId,
+    });
+    if (inboxResult?.ok) {
+      const items = Array.isArray(inboxResult.items) ? inboxResult.items : [];
+      setSupportThreads(items);
+      const nextThreadId =
+        items.find((entry) => entry.threadId === selectedSupportThreadId)?.threadId ||
+        items[0]?.threadId ||
+        "";
+      setSelectedSupportThreadId(nextThreadId);
+      if (nextThreadId) {
+        await loadSupportThreadDetail(nextThreadId, resolvedPlatformId);
+      } else {
+        setSelectedSupportThread(null);
+        setSupportDecision(null);
+      }
+    } else {
+      setSupportThreads(Array.isArray(inboxResult?.items) ? inboxResult.items : []);
+      setSupportError(inboxResult?.error || "拉取客服会话失败。");
+    }
+    await refreshSupportAudit(resolvedPlatformId);
+    if (options.silent !== true) {
+      setSupportLoading(false);
+    }
+  };
+
   const loadCommerceTeam = async () => {
     if (!canInitializeCommerce) {
       setTeamReady(false);
@@ -5231,6 +5811,10 @@ function CommerceView({
     setSelectedRunId((current) =>
       runs.some((entry) => entry.id === current) ? current : runs[0]?.id || "",
     );
+    await loadSupportPlatformsAndQueue({
+      platformId: selectedSupportPlatformId,
+      silent: true,
+    });
   };
 
   const loadCurrentSession = async ({ silent = false } = {}) => {
@@ -5331,6 +5915,9 @@ function CommerceView({
     openclawChat.handleAgentEvent(toolStreamRef.current, payload);
     syncToolHostState();
   };
+
+  incomingChatEventHandlerRef.current = handleIncomingChatEvent;
+  incomingAgentEventHandlerRef.current = handleIncomingAgentEvent;
 
   const copyChatText = async (value, successMessage = "已复制") => {
     if (!value) {
@@ -5449,6 +6036,244 @@ function CommerceView({
     }
   };
 
+  const handleSupportSetupStepToggle = async (step, value) => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportSavePending(true);
+    setSupportError("");
+    const result = await confirmSupportSetupStep({
+      platform: selectedSupportPlatformId,
+      step,
+      value,
+    });
+    setSupportSavePending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "保存千牛接入步骤失败。");
+      return;
+    }
+    setSupportPlatformForm((current) => ({ ...current, [step]: value }));
+    await loadSupportSetupState(selectedSupportPlatformId);
+    setSupportNotice("千牛接入步骤已更新。");
+  };
+
+  const handleRequestSupportAccessibility = async () => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportSavePending(true);
+    setSupportError("");
+    const result = await requestSupportAccessibility({
+      platform: selectedSupportPlatformId,
+    });
+    setSupportSavePending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "无法打开辅助功能授权引导。");
+      return;
+    }
+    setSupportNotice("系统辅助功能设置页已打开，授权后回到这里刷新即可。");
+    await loadSupportSetupState(selectedSupportPlatformId);
+  };
+
+  const handleBindSupportStore = async () => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportSavePending(true);
+    setSupportError("");
+    const result = await bindSupportStore({
+      platform: selectedSupportPlatformId,
+      ...supportStoreDraft,
+    });
+    setSupportSavePending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "绑定千牛店铺失败。");
+      return;
+    }
+    setSupportNotice("千牛店铺已绑定。");
+    await loadSupportPlatformsAndQueue({
+      platformId: selectedSupportPlatformId,
+      silent: true,
+    });
+  };
+
+  const handleInspectSupportUi = async () => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportQueueLoading(true);
+    setSupportError("");
+    const result = await inspectSupportUI({
+      platform: selectedSupportPlatformId,
+      threadId: selectedSupportThreadId,
+    });
+    setSupportQueueLoading(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "千牛 UI 检测失败。");
+      return;
+    }
+    setSupportUiInspect(result.inspect ?? null);
+    if (Array.isArray(result.items)) {
+      setSupportThreads(result.items);
+    }
+    if (result.currentThread) {
+      setSelectedSupportThread(result.currentThread);
+      setSupportDecision(result.currentThread?.decision ?? null);
+      setSelectedSupportThreadId(result.currentThread.threadId || "");
+    }
+    await loadSupportSetupState(selectedSupportPlatformId);
+    await refreshSupportAudit(selectedSupportPlatformId);
+    setSupportNotice("千牛 UI 检测完成。");
+  };
+
+  const handleToggleSupportMonitor = async (shouldStart) => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportSavePending(true);
+    setSupportError("");
+    const result = shouldStart
+      ? await startSupportPlatformMonitor({ platform: selectedSupportPlatformId })
+      : await stopSupportPlatformMonitor({ platform: selectedSupportPlatformId });
+    setSupportSavePending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || (shouldStart ? "启动千牛监听失败。" : "暂停千牛监听失败。"));
+      return;
+    }
+    setSupportNotice(shouldStart ? "千牛监听已启动。" : "千牛监听已暂停。");
+    await loadSupportPlatformsAndQueue({
+      platformId: selectedSupportPlatformId,
+      silent: true,
+    });
+  };
+
+  const handleSupportQueueRefresh = async () => {
+    if (!selectedSupportPlatformId) {
+      return;
+    }
+    setSupportQueueLoading(true);
+    setSupportError("");
+    if (selectedSupportPlatformId === "taobao") {
+      const setupResult = await loadSupportSetupState(selectedSupportPlatformId);
+      if (setupResult?.setupStatus?.blockingReason) {
+        setSupportQueueLoading(false);
+        setSupportThreads([]);
+        setSelectedSupportThreadId("");
+        setSelectedSupportThread(null);
+        setSupportDecision(null);
+        return;
+      }
+    }
+    const result = await pullSupportInbox({
+      platform: selectedSupportPlatformId,
+    });
+    setSupportQueueLoading(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "刷新客服队列失败。");
+      return;
+    }
+    const items = Array.isArray(result.items) ? result.items : [];
+    setSupportThreads(items);
+    const nextThreadId =
+      items.find((entry) => entry.threadId === selectedSupportThreadId)?.threadId ||
+      items[0]?.threadId ||
+      "";
+    setSelectedSupportThreadId(nextThreadId);
+    if (nextThreadId) {
+      await loadSupportThreadDetail(nextThreadId, selectedSupportPlatformId);
+    }
+    await refreshSupportAudit(selectedSupportPlatformId);
+    setSupportNotice("客服队列已刷新。");
+  };
+
+  const handleRunSupportTriage = async () => {
+    if (!selectedSupportPlatformId || !selectedSupportThreadId) {
+      return;
+    }
+    setSupportActionPending(true);
+    setSupportError("");
+    setSupportNotice("");
+    const result = await runSupportTriage({
+      platform: selectedSupportPlatformId,
+      threadId: selectedSupportThreadId,
+    });
+    setSupportActionPending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "客服分诊失败。");
+      return;
+    }
+    setSelectedSupportThread(result.thread ?? null);
+    setSupportDecision(result.decision ?? null);
+    setSupportNotice("客服分诊已完成。");
+    await handleSupportQueueRefresh();
+  };
+
+  const handleApproveSupportReply = async (automated = false) => {
+    if (!selectedSupportPlatformId || !selectedSupportThreadId) {
+      return;
+    }
+    setSupportActionPending(true);
+    setSupportError("");
+    const result = await approveSupportReply({
+      platform: selectedSupportPlatformId,
+      threadId: selectedSupportThreadId,
+      message: typeof supportDecision?.replyDraft === "string" ? supportDecision.replyDraft : "",
+      automated,
+    });
+    setSupportActionPending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "发送客服回复失败。");
+      return;
+    }
+    setSupportNotice(automated ? "低风险自动回复已发送。" : "回复已发送。");
+    await handleSupportQueueRefresh();
+  };
+
+  const handleApproveSupportAction = async (type = "handoff") => {
+    if (!selectedSupportPlatformId || !selectedSupportThreadId) {
+      return;
+    }
+    setSupportActionPending(true);
+    setSupportError("");
+    const reason =
+      type === "handoff"
+        ? supportDecision?.humanReason || "会话已转给人工继续处理"
+        : supportDecision?.humanReason || "该动作已登记，等待人工执行";
+    const result = await approveSupportAction({
+      platform: selectedSupportPlatformId,
+      threadId: selectedSupportThreadId,
+      type,
+      reason,
+    });
+    setSupportActionPending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "登记客服动作失败。");
+      return;
+    }
+    setSupportNotice(type === "handoff" ? "会话已转人工。" : "动作已登记，等待人工执行。");
+    await handleSupportQueueRefresh();
+  };
+
+  const handleSupportRulesSave = async () => {
+    setSupportSavePending(true);
+    setSupportError("");
+    const result = await setSupportAutomationRules({
+      enabled: supportRulesForm.enabled,
+      autoReplyLowRisk: supportRulesForm.autoReplyLowRisk,
+      autoRunTriage: supportRulesForm.autoRunTriage,
+      requireHumanForHighRisk: supportRulesForm.requireHumanForHighRisk,
+      pollIntervalMs: Number(supportRulesForm.pollIntervalMs || 45000),
+    });
+    setSupportSavePending(false);
+    if (!result?.ok) {
+      setSupportError(result?.error || "保存客服自动化规则失败。");
+      return;
+    }
+    setSupportRulesForm(buildSupportRulesForm(result.rules));
+    setSupportNotice("客服自动化规则已保存。");
+    await refreshSupportAudit(selectedSupportPlatformId);
+  };
+
   useEffect(() => {
     if (!canInitializeCommerce) {
       setTeamReady(false);
@@ -5488,6 +6313,45 @@ function CommerceView({
   }, [selectedRunId]);
 
   useEffect(() => {
+    const currentPlatform =
+      supportPlatforms.find((entry) => entry.id === selectedSupportPlatformId) ?? null;
+    setSupportStoreDraft({
+      storeId:
+        currentPlatform?.settings?.shopId ||
+        currentPlatform?.storeProfiles?.[0]?.storeId ||
+        "",
+      storeLabel:
+        currentPlatform?.settings?.storeLabel ||
+        currentPlatform?.storeProfiles?.[0]?.storeLabel ||
+        "",
+      shopAlias:
+        currentPlatform?.settings?.shopAlias ||
+        currentPlatform?.storeProfiles?.[0]?.shopAlias ||
+        "",
+    });
+    if (!currentPlatform) {
+      setSupportThreads([]);
+      setSelectedSupportThreadId("");
+      setSelectedSupportThread(null);
+      setSupportDecision(null);
+      setSupportSetupStatus(DEFAULT_SUPPORT_SETUP_STATUS);
+      setSupportUiInspect(null);
+      return;
+    }
+    void loadSupportSetupState(currentPlatform.id);
+    void handleSupportQueueRefresh();
+  }, [selectedSupportPlatformId]);
+
+  useEffect(() => {
+    if (!selectedSupportThreadId || !selectedSupportPlatformId) {
+      setSelectedSupportThread(null);
+      setSupportDecision(null);
+      return;
+    }
+    void loadSupportThreadDetail(selectedSupportThreadId, selectedSupportPlatformId);
+  }, [selectedSupportThreadId]);
+
+  useEffect(() => {
     const unsubscribe = subscribeGatewayChatEvents((frame) => {
       if (!frame || typeof frame !== "object") {
         return;
@@ -5504,11 +6368,11 @@ function CommerceView({
         return;
       }
       if (frame.event === "chat") {
-        handleIncomingChatEvent(frame.payload);
+        incomingChatEventHandlerRef.current(frame.payload);
         return;
       }
       if (frame.event === "agent") {
-        handleIncomingAgentEvent(frame.payload);
+        incomingAgentEventHandlerRef.current(frame.payload);
       }
     });
     return () => {
@@ -5623,92 +6487,120 @@ function CommerceView({
       {!teamError && teamNotice ? (
         <div className="inline-notice inline-notice--success">{teamNotice}</div>
       ) : null}
+      {supportError ? <div className="inline-notice inline-notice--error">{supportError}</div> : null}
+      {!supportError && supportNotice ? (
+        <div className="inline-notice inline-notice--success">{supportNotice}</div>
+      ) : null}
+
+      <article className="card commerce-overview">
+        <div className="commerce-overview__copy">
+          <div className="commerce-overview__eyebrow">本地 OpenClaw 电商工作台</div>
+          <h2 className="commerce-overview__title">
+            把 CEO、部门直聊、工作流和产物回收成一个真正能用的电商操作台。
+          </h2>
+          <p className="commerce-overview__desc">
+            先把当前任务放到最上面，再把团队入口、工作流模板和产物沉淀按优先级往下排，浏览时可以自然下滑，不用挤在一屏里。
+          </p>
+        </div>
+        <div className="commerce-overview__stats">
+          <article className="commerce-overview__stat">
+            <span className="commerce-overview__stat-label">本地状态</span>
+            <strong>{canInitializeCommerce ? "已就绪" : "待修复"}</strong>
+            <span>{teamReady ? "团队脚手架已可用" : teamLoading ? "正在刷新团队" : "等待初始化"}</span>
+          </article>
+          <article className="commerce-overview__stat">
+            <span className="commerce-overview__stat-label">可直聊部门</span>
+            <strong>{directChatAgentCount}</strong>
+            <span>{commerceAgents.length ? `共 ${commerceAgents.length} 个团队入口` : "等待载入团队"}</span>
+          </article>
+          <article className="commerce-overview__stat">
+            <span className="commerce-overview__stat-label">已开放工作流</span>
+            <strong>{activeWorkflowCount}</strong>
+            <span>{commerceWorkflows.length ? `共 ${commerceWorkflows.length} 条模板` : "等待载入模板"}</span>
+          </article>
+          <article className="commerce-overview__stat">
+            <span className="commerce-overview__stat-label">最近产物</span>
+            <strong>{latestRunLabel}</strong>
+            <span>{latestRun?.startedAt ? formatDateTime(latestRun.startedAt) : "右侧会持续沉淀结果"}</span>
+          </article>
+          <article className="commerce-overview__stat">
+            <span className="commerce-overview__stat-label">客服队列</span>
+            <strong>{supportQueueCount}</strong>
+            <span>{supportApprovalCount > 0 ? `${supportApprovalCount} 条待人工审批` : "当前没有待审批高风险会话"}</span>
+          </article>
+        </div>
+      </article>
 
       <div className="commerce-layout">
-        <aside className="card commerce-sidebar">
-          <div className="card-heading">
-            <div>
-              <div className="card-title">电商团队</div>
+        <section className="card commerce-main commerce-main--primary">
+          <div className="commerce-main__topbar">
+            <div className="commerce-main__topbar-copy">
+              <div className="card-title">当前工作区</div>
               <div className="card-subtitle">
-                {currentUser?.displayName || "当前用户"} 的本地 OpenClaw 电商 workspace。
+                先专注正在处理的部门或工作流，其他团队入口和产物沉淀放到下方，页面允许自然下滑。
               </div>
             </div>
+            <div className="commerce-main__topbar-actions">
+              <button
+                className="ghost-button small"
+                onClick={() => void loadCommerceTeam()}
+                disabled={teamLoading}
+              >
+                {teamLoading ? "刷新中..." : "刷新团队"}
+              </button>
+              <span className={`commerce-status-pill${canInitializeCommerce ? " is-live" : ""}`}>
+                <span className="pill-dot" />
+                本地 {canInitializeCommerce ? "已连接" : "待修复"}
+              </span>
+              <span className={`commerce-status-pill${teamReady ? " is-live" : ""}`}>
+                <span className="pill-dot" />
+                团队 {teamReady ? "已就绪" : teamLoading ? "刷新中" : "待初始化"}
+              </span>
+              <span className={`commerce-status-pill${teamDashboardUrl ? " is-live" : ""}`}>
+                <span className="pill-dot" />
+                Dashboard {teamDashboardUrl ? "在线" : "未发现"}
+              </span>
+            </div>
+          </div>
+
+          <div className="commerce-mode-switcher commerce-mode-switcher--primary">
             <button
-              className="ghost-button small"
-              onClick={() => void loadCommerceTeam()}
-              disabled={teamLoading}
+              type="button"
+              className={`commerce-mode-button${panelMode === "chat" ? " is-active" : ""}`}
+              onClick={() => setPanelMode("chat")}
             >
-              {teamLoading ? "刷新中..." : "刷新"}
+              部门直聊
+            </button>
+            <button
+              type="button"
+              className={`commerce-mode-button${panelMode === "workflow" ? " is-active" : ""}`}
+              onClick={() => setPanelMode("workflow")}
+            >
+              工作流
+            </button>
+            <button
+              type="button"
+              className={`commerce-mode-button${panelMode === "support" ? " is-active" : ""}`}
+              onClick={() => setPanelMode("support")}
+            >
+              客服自动化
             </button>
           </div>
-          <div className="commerce-section-label">直聊 Agent</div>
-          <div className="commerce-agent-list">
-            {commerceAgents.map((agent) => (
-              <button
-                key={agent.id}
-                className={`commerce-agent-card${selectedAgentId === agent.id && panelMode === "chat" ? " is-active" : ""}`}
-                onClick={() => {
-                  setPanelMode("chat");
-                  setSelectedAgentId(agent.id);
-                }}
-              >
-                <div className="commerce-agent-card__top">
-                  <strong>{agent.label}</strong>
-                  <span
-                    className={`assistant-model-badge${
-                      agent.status === "coming-soon" ? " assistant-model-badge--mono" : ""
-                    }`}
-                  >
-                    {agent.status === "coming-soon" ? "即将开放" : "可直聊"}
-                  </span>
-                </div>
-                <div className="commerce-agent-card__meta">
-                  {agent.department} · 默认模型 {agent.defaultModelId}
-                </div>
-                <div className="commerce-agent-card__summary">{agent.summary}</div>
-              </button>
-            ))}
-          </div>
 
-          <div className="commerce-section-label">工作流模板</div>
-          <div className="commerce-workflow-list">
-            {commerceWorkflows.map((workflow) => (
-              <button
-                key={workflow.id}
-                className={`commerce-workflow-card${
-                  selectedWorkflowId === workflow.id && panelMode === "workflow" ? " is-active" : ""
-                }`}
-                onClick={() => {
-                  setPanelMode("workflow");
-                  setSelectedWorkflowId(workflow.id);
-                }}
-              >
-                <div className="commerce-workflow-card__top">
-                  <strong>{workflow.label}</strong>
-                  <span className="assistant-model-badge assistant-model-badge--mono">
-                    {workflow.status === "coming-soon" ? "Phase 2" : "Phase 1"}
-                  </span>
-                </div>
-                <div className="commerce-workflow-card__desc">{workflow.description}</div>
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <div className="card commerce-main">
-          {panelMode === "chat" ? (
-            <>
-              <div className="card-heading">
-                <div>
-                  <div className="card-title">
-                    {selectedAgent?.label || "电商 Agent"}
-                    {selectedAgent?.status === "coming-soon" ? " · Phase 1 占位能力" : ""}
-                  </div>
-                  <div className="card-subtitle">
-                    当前会话绑定到 {chatSessionKey}，默认模型 {selectedAgent?.defaultModelId || "--"}。
-                  </div>
-                </div>
-                <div className="commerce-main__actions">
+          <div className="commerce-main__hero">
+            <div className="commerce-main__hero-copy">
+              <div className="commerce-main__kicker">{activeModeLabel}</div>
+              <div className="commerce-main__headline">
+                {activePanelTitle}
+                {panelMode === "chat" && selectedAgent?.status === "coming-soon"
+                  ? " · Phase 1 占位能力"
+                  : ""}
+              </div>
+              <p className="commerce-main__summary">{activePanelSummary}</p>
+            </div>
+            <div className="commerce-main__actions">
+              {panelMode === "chat" ? (
+                <>
                   <button
                     className={`assistant-tool-button${chatShowThinking ? " is-active" : ""}`}
                     type="button"
@@ -5717,6 +6609,17 @@ function CommerceView({
                   >
                     <ComposerIcon>
                       <BrainIcon />
+                    </ComposerIcon>
+                  </button>
+                  <button
+                    className="assistant-tool-button"
+                    type="button"
+                    title="新建会话"
+                    onClick={() => void handleSendChat("/new")}
+                    disabled={chatSending}
+                  >
+                    <ComposerIcon>
+                      <PlusIcon />
                     </ComposerIcon>
                   </button>
                   <button
@@ -5731,9 +6634,103 @@ function CommerceView({
                       {chatSending ? <StopIcon /> : <UploadIcon />}
                     </ComposerIcon>
                   </button>
-                </div>
-              </div>
+                </>
+              ) : panelMode === "workflow" ? (
+                <>
+                  <button
+                    className="ghost-button small"
+                    type="button"
+                    onClick={() => {
+                      setPanelMode("chat");
+                      setSelectedAgentId(selectedWorkflow?.targetAgentId || "commerce-ceo");
+                    }}
+                  >
+                    查看负责部门
+                  </button>
+                  <button
+                    className="primary-button small"
+                    onClick={() => void handleWorkflowSubmit()}
+                    disabled={workflowPending || selectedWorkflow?.status === "coming-soon"}
+                  >
+                    {workflowPending
+                      ? "运行中..."
+                      : selectedWorkflow?.status === "coming-soon"
+                        ? "Phase 2 开放"
+                        : "运行工作流"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="ghost-button small"
+                    type="button"
+                    onClick={() => void handleSupportQueueRefresh()}
+                    disabled={supportQueueLoading || supportLoading}
+                  >
+                    {supportQueueLoading ? "刷新中..." : "刷新队列"}
+                  </button>
+                  <button
+                    className="primary-button small"
+                    type="button"
+                    onClick={() => void handleRunSupportTriage()}
+                    disabled={supportActionPending || !selectedSupportThreadId}
+                  >
+                    {supportActionPending ? "处理中..." : "运行分诊"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
 
+          <div className="commerce-context-grid">
+            <article className="commerce-context-card">
+              <span className="commerce-context-card__label">当前对象</span>
+              <strong>{activePanelTitle}</strong>
+              <p>
+                {panelMode === "chat"
+                  ? `${selectedAgent?.department || "电商团队"} · 独立会话，不会和别的部门串上下文。`
+                  : panelMode === "workflow"
+                    ? `${workflowTargetAgent?.label || "CEO 总控"} 负责主编排，结果会同步到右侧产物区。`
+                    : `${selectedSupportPlatform?.label || "客服自动化"} · 线程队列和人工审批都在当前面板内完成。`}
+              </p>
+            </article>
+            <article className="commerce-context-card">
+              <span className="commerce-context-card__label">会话与模型</span>
+              <strong>{activeModelLabel}</strong>
+              <p>
+                {panelMode === "chat"
+                  ? `当前绑定 ${chatSessionKey}。`
+                  : panelMode === "workflow"
+                    ? selectedWorkflow?.status === "coming-soon"
+                      ? "当前只做 brief 沉淀，不触发图像或视频闭环。"
+                      : "运行时会根据部门职责在本地模型目录里自动分配。 "
+                    : "客服分诊默认调用 customer-service-dept，在本地 OpenClaw 上生成结构化决策。"}
+                {panelMode === "chat"
+                  ? ` reasoning=${activeSession?.reasoningLevel || "off"}${chatThinkingLevel ? ` · thinking=${chatThinkingLevel}` : ""}`
+                  : ""}
+              </p>
+            </article>
+            <article className="commerce-context-card">
+              <span className="commerce-context-card__label">工作方式</span>
+              <strong>
+                {panelMode === "chat"
+                  ? "即时对话"
+                  : panelMode === "workflow"
+                    ? "brief → run → 产物"
+                    : "inbox → triage → reply / approval"}
+              </strong>
+              <p>
+                {panelMode === "chat"
+                  ? "直接基于本地 OpenClaw 会话，适合边聊边改。"
+                  : panelMode === "workflow"
+                    ? "适合一次填清楚 brief，让各部门在 workspace 里串起来执行。"
+                    : "桌面端在线时轮询平台消息，低风险自动回复，高风险进入人工审批。"}
+              </p>
+            </article>
+          </div>
+
+          {panelMode === "chat" ? (
+            <div className="commerce-chat-shell">
               <div className="assistant-session-bar commerce-session-bar">
                 <div className="assistant-session-bar__meta">
                   <strong>{selectedAgent?.department || "电商多 Agent"}</strong>
@@ -5757,13 +6754,16 @@ function CommerceView({
                     ))}
                   </select>
                   <span className="assistant-session-bar__model-hint">
-                    reasoning={activeSession?.reasoningLevel || "off"}
-                    {chatThinkingLevel ? ` · thinking=${chatThinkingLevel}` : ""}
+                    当前部门会话直接绑定到这个 OpenClaw session。
                   </span>
                 </label>
               </div>
 
-              <div className={`chat-split-container${chatSidebarContent ? " chat-split-container--open" : ""}`}>
+              <div
+                className={`chat-split-container commerce-chat-split${
+                  chatSidebarContent ? " chat-split-container--open" : ""
+                }`}
+              >
                 <div className="chat-main">
                   <div
                     className="assistant-thread commerce-thread"
@@ -5788,7 +6788,7 @@ function CommerceView({
                     )}
                   </div>
 
-                  <div className="chat-compose">
+                  <div className="chat-compose commerce-chat-compose">
                     {chatError ? <div className="assistant-error">{chatError}</div> : null}
                     <div className="assistant-composer">
                       <label className="chat-compose__field">
@@ -5804,7 +6804,12 @@ function CommerceView({
                             setChatDraft(event.target.value);
                           }}
                           onKeyDown={(event) => {
-                            if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) {
+                            if (
+                              event.key !== "Enter" ||
+                              event.shiftKey ||
+                              event.isComposing ||
+                              event.keyCode === 229
+                            ) {
                               return;
                             }
                             event.preventDefault();
@@ -5853,35 +6858,28 @@ function CommerceView({
                   </div>
                 ) : null}
               </div>
-            </>
-          ) : (
-            <>
-              <div className="card-heading">
-                <div>
-                  <div className="card-title">{selectedWorkflow?.label || "选择工作流"}</div>
-                  <div className="card-subtitle">
-                    {selectedWorkflow?.description || "选择左侧模板后，桌面端会把 brief 写入本地 OpenClaw workspace，再编排各部门 agent 运行。"}
-                  </div>
-                </div>
-                <button
-                  className="primary-button small"
-                  onClick={() => void handleWorkflowSubmit()}
-                  disabled={workflowPending || selectedWorkflow?.status === "coming-soon"}
-                >
-                  {workflowPending
-                    ? "运行中..."
-                    : selectedWorkflow?.status === "coming-soon"
-                      ? "Phase 2 开放"
-                      : "运行工作流"}
-                </button>
-              </div>
-
+            </div>
+          ) : panelMode === "workflow" ? (
+            <div className="commerce-workflow-shell">
               {workflowError ? (
                 <div className="inline-notice inline-notice--error">{workflowError}</div>
               ) : null}
               {!workflowError && workflowNotice ? (
                 <div className="inline-notice inline-notice--success">{workflowNotice}</div>
               ) : null}
+
+              <div className="commerce-workflow-shell__intro">
+                <p className="commerce-workflow-shell__hint">
+                  先把 brief 填完整，再运行本地 workflow。运行结束后，右侧会自动出现 summary、artifact 文件和导出入口。
+                </p>
+                <span
+                  className={`assistant-model-badge${
+                    selectedWorkflow?.status === "coming-soon" ? " assistant-model-badge--mono" : ""
+                  }`}
+                >
+                  {selectedWorkflow?.status === "coming-soon" ? "Phase 2 占位" : "本地执行"}
+                </span>
+              </div>
 
               <div className="commerce-form-grid">
                 <label className="field">
@@ -5993,87 +6991,935 @@ function CommerceView({
                   视觉设计部和视频剪辑部在 Phase 1 只保留入口。你现在可以先沉淀 brief 和策略，等 Phase 2 再接图像/视频闭环。
                 </div>
               ) : null}
-            </>
-          )}
-        </div>
-
-        <aside className="card commerce-run-panel">
-          <div className="card-heading">
-            <div>
-              <div className="card-title">项目产物</div>
-              <div className="card-subtitle">工作流结果会直接落盘，并可复制、导出或打开。</div>
             </div>
-          </div>
+          ) : (
+            <div className="commerce-support-shell">
+              <div className="commerce-support-shell__intro">
+                <p className="commerce-support-shell__hint">
+                  客服自动化目前只在本机在线时运行。这里集中处理平台连接、消息分诊、回复草稿和人工审批。
+                </p>
+                <span className={`assistant-model-badge${supportRulesForm.enabled ? "" : " assistant-model-badge--mono"}`}>
+                  {supportRulesForm.enabled ? "自动化已启用" : "自动化已暂停"}
+                </span>
+              </div>
 
-          <div className="commerce-run-list">
-            {commerceRuns.length === 0 ? (
-              <div className="section-note">还没有 workflow run。先运行一个模板，右侧会显示产物和 Markdown 汇总。</div>
-            ) : (
-              commerceRuns.map((run) => (
-                <button
-                  key={run.id}
-                  className={`commerce-run-card${selectedRunId === run.id ? " is-active" : ""}`}
-                  onClick={() => setSelectedRunId(run.id)}
-                >
-                  <div className="commerce-run-card__top">
-                    <strong>{run.workflowLabel || run.workflowId}</strong>
+              {supportLoading ? (
+                <div className="section-note">正在加载平台配置、线程队列和审计记录...</div>
+              ) : null}
+
+              <div className="commerce-support-focus-grid">
+                <section className="commerce-support-card">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>当前会话</strong>
+                      <span>
+                        {selectedSupportThread
+                          ? `${selectedSupportThread.buyerName || selectedSupportThread.buyerId || "匿名买家"} · ${selectedSupportThread.threadId}`
+                          : "先从左侧客服队列选择一条线程"}
+                      </span>
+                    </div>
                     <span className="assistant-model-badge assistant-model-badge--mono">
-                      {run.status}
+                      {selectedSupportThread?.status || "未选择"}
                     </span>
                   </div>
-                  <div className="commerce-run-card__meta">
-                    {run.targetAgentId} · {formatDateTime(run.startedAt)}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
 
-          {selectedRun ? (
-            <div className="commerce-run-detail">
-              <div className="commerce-run-detail__actions">
-                <button
-                  className="ghost-button small"
-                  onClick={() => void exportCommerceRun({ runId: selectedRun.id })}
-                >
-                  导出 Markdown
-                </button>
-                <button
-                  className="ghost-button small"
-                  onClick={() => copyChatText(selectedRunSummary, "工作流结果已复制")}
-                  disabled={!selectedRunSummary}
-                >
-                  复制结果
-                </button>
-              </div>
+                  {selectedSupportThread ? (
+                    <>
+                      <div className="commerce-support-meta-grid">
+                        <article className="commerce-support-meta-card">
+                          <span className="commerce-context-card__label">买家</span>
+                          <strong>
+                            {selectedSupportThread.buyerName || selectedSupportThread.buyerId || "--"}
+                          </strong>
+                          <p>
+                            {selectedSupportThread.orderRefs?.length
+                              ? `关联订单 ${selectedSupportThread.orderRefs.join(" / ")}`
+                              : "当前还没有识别出关联订单号。"}
+                          </p>
+                        </article>
+                        <article className="commerce-support-meta-card">
+                          <span className="commerce-context-card__label">风险与处理</span>
+                          <strong>{selectedSupportThread.riskLevel || supportDecision?.riskLevel || "--"}</strong>
+                          <p>
+                            {supportDecision?.nextAction
+                              ? `下一步：${supportDecision.nextAction}`
+                              : "先运行分诊，再决定自动回复还是转人工。"}
+                          </p>
+                        </article>
+                      </div>
 
-              <div className="commerce-run-detail__summary">
-                <pre>{selectedRunSummary || "当前 run 还没有可展示的 Markdown 汇总。"}</pre>
-              </div>
+                      <div className="commerce-support-message-block">
+                        <div className="commerce-section-label">最新消息</div>
+                        <div className="commerce-support-latest-message">
+                          {selectedSupportThread.latestMessage || "当前线程暂无最新消息。"}
+                        </div>
+                      </div>
 
-              <div className="commerce-section-label">产物文件</div>
-              <div className="commerce-artifact-list">
-                {selectedRunArtifacts.map((artifact) => (
-                  <div className="commerce-artifact-row" key={artifact.id || artifact.path}>
-                    <div>
-                      <strong>{artifact.label || artifact.id}</strong>
-                      <div className="commerce-artifact-row__path">{artifact.path}</div>
+                      <div className="commerce-support-message-block">
+                        <div className="commerce-section-label">历史消息</div>
+                        <div className="commerce-support-history">
+                          {selectedSupportHistory.length === 0 ? (
+                            <div className="section-note">当前线程还没有历史消息。</div>
+                          ) : (
+                            selectedSupportHistory.map((entry, index) => (
+                              <article
+                                key={`${entry.timestamp || "t"}-${index}`}
+                                className={`commerce-support-message commerce-support-message--${
+                                  entry.role === "assistant" || entry.role === "seller" ? "assistant" : "buyer"
+                                }`}
+                              >
+                                <div className="commerce-support-message__meta">
+                                  <strong>{entry.role === "assistant" || entry.role === "seller" ? "客服 / 店铺" : "买家"}</strong>
+                                  <span>{formatDateTime(entry.timestamp)}</span>
+                                </div>
+                                <p>{entry.text}</p>
+                              </article>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="section-note">
+                      当前平台还没有选中的客服会话。先在左侧刷新队列，或者启用淘宝 demo 数据体验完整流程。
                     </div>
-                    <button
-                      className="ghost-button small"
-                      onClick={() => void openCommerceArtifact({ path: artifact.path })}
-                    >
-                      打开
-                    </button>
+                  )}
+                </section>
+
+                <section className="commerce-support-card">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>AI 分诊结果</strong>
+                      <span>这里显示 customer-service-dept 基于线程上下文生成的结构化决策。</span>
+                    </div>
+                    <span className="assistant-model-badge assistant-model-badge--mono">
+                      {supportDecision?.intent || "待分诊"}
+                    </span>
                   </div>
-                ))}
+
+                  {supportDecision ? (
+                    <>
+                      <div className="commerce-support-decision-grid">
+                        <article className="commerce-support-meta-card">
+                          <span className="commerce-context-card__label">意图</span>
+                          <strong>{supportDecision.intent || "--"}</strong>
+                          <p>置信度 {typeof supportDecision.confidence === "number" ? `${Math.round(supportDecision.confidence * 100)}%` : "--"}</p>
+                        </article>
+                        <article className="commerce-support-meta-card">
+                          <span className="commerce-context-card__label">动作</span>
+                          <strong>{supportDecision.nextAction || "--"}</strong>
+                          <p>{supportDecision.riskLevel ? `风险 ${supportDecision.riskLevel}` : "等待补齐上下文"}</p>
+                        </article>
+                      </div>
+
+                      <label className="field field--full">
+                        <span>回复草稿</span>
+                        <textarea
+                          value={supportDecision.replyDraft || ""}
+                          onChange={(event) =>
+                            setSupportDecision((current) =>
+                              current ? { ...current, replyDraft: event.target.value } : current,
+                            )
+                          }
+                          placeholder="分诊后会生成可发送的回复草稿。"
+                        />
+                      </label>
+
+                      <label className="field field--full">
+                        <span>人工说明 / 审批原因</span>
+                        <textarea
+                          value={supportDecision.humanReason || ""}
+                          onChange={(event) =>
+                            setSupportDecision((current) =>
+                              current ? { ...current, humanReason: event.target.value } : current,
+                            )
+                          }
+                          placeholder="高风险场景会写出转人工或待审批原因。"
+                        />
+                      </label>
+
+                      <div className="result-actions">
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={() => void handleApproveSupportReply(false)}
+                          disabled={
+                            supportActionPending ||
+                            !selectedSupportThreadId ||
+                            !(typeof supportDecision.replyDraft === "string" && supportDecision.replyDraft.trim())
+                          }
+                        >
+                          {supportActionPending ? "处理中..." : "发送回复"}
+                        </button>
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => void handleApproveSupportAction("handoff")}
+                          disabled={supportActionPending || !selectedSupportThreadId}
+                        >
+                          转人工
+                        </button>
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => void handleApproveSupportAction("action-request")}
+                          disabled={supportActionPending || !selectedSupportThreadId}
+                        >
+                          登记动作审批
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="section-note">
+                      当前线程还没有 AI 分诊结果。先刷新队列并运行一次分诊，低风险会给出自动回复草稿，高风险会进入人工审批。
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <div className="commerce-support-detail-grid">
+                <section className="commerce-support-card">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>上下文补齐</strong>
+                      <span>订单、物流、售后和商品规则会在这里沉淀，方便人工复核。</span>
+                    </div>
+                  </div>
+                  <div className="commerce-support-json">
+                    <pre>
+                      {selectedSupportContext
+                        ? JSON.stringify(selectedSupportContext, null, 2)
+                        : "当前线程还没有补齐上下文。配置订单 / 物流 / 售后接口后，这里会出现结构化结果。"}
+                    </pre>
+                  </div>
+                </section>
+
+                <section className="commerce-support-card">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>待审批动作</strong>
+                      <span>退款、改地址、赔付、重发等动作默认只登记，不自动执行。</span>
+                    </div>
+                  </div>
+                  <div className="commerce-support-action-list">
+                    {selectedSupportRequestedActions.length === 0 ? (
+                      <div className="section-note">当前线程还没有待审批动作记录。</div>
+                    ) : (
+                      selectedSupportRequestedActions.map((entry, index) => (
+                        <article className="commerce-support-action-row" key={`${entry.type || "action"}-${index}`}>
+                          <div>
+                            <strong>{entry.type || "action-request"}</strong>
+                            <p>{entry.reason || "等待人工处理。"}</p>
+                          </div>
+                          <span className="assistant-model-badge assistant-model-badge--mono">
+                            {entry.status || "pending"}
+                          </span>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
               </div>
             </div>
-          ) : null}
+          )}
+        </section>
 
-          <div className="commerce-run-panel__footnote">
-            本地 provider: {availableGatewayModels[0]?.providerId || "openai"} · 当前账号范围 {currentScopeId || "--"}
+        <section className="card commerce-browser-panel">
+          <div className="commerce-browser-panel__header">
+            <div>
+              <div className="card-title">
+                {panelMode === "support" ? "平台与队列" : "团队与模板"}
+              </div>
+              <div className="card-subtitle">
+                {panelMode === "support"
+                  ? "先定平台，再看队列。平台连接和客服线程都在这里切换。"
+                  : "这里专门用来挑部门和模板。每张卡做大一点，先看清职责，再决定要不要切过去。"}
+              </div>
+            </div>
           </div>
+
+          {panelMode === "support" ? (
+            <div className="commerce-browser-stack">
+              <section className="commerce-browser-section">
+                <div className="commerce-section-head">
+                  <div className="commerce-section-head__copy">
+                    <strong>平台连接</strong>
+                    <span>淘宝优先，抖音做二阶段探测，小红书只保留分析入口。</span>
+                  </div>
+                  <span className="commerce-count-badge">{supportPlatforms.length}</span>
+                </div>
+                <div className="commerce-support-platform-list">
+                  {supportPlatforms.length === 0 ? (
+                    <div className="section-note">
+                      {supportLoading ? "正在读取客服平台..." : "当前没有可用的平台配置。"}
+                    </div>
+                  ) : (
+                    supportPlatforms.map((platform) => (
+                      <button
+                        key={platform.id}
+                        className={`commerce-support-platform-card${
+                          selectedSupportPlatformId === platform.id ? " is-active" : ""
+                        }`}
+                        onClick={() => setSelectedSupportPlatformId(platform.id)}
+                      >
+                        <div className="commerce-support-platform-card__top">
+                          <strong>{platform.label}</strong>
+                          <span className="assistant-model-badge assistant-model-badge--mono">
+                            {platform.stage}
+                          </span>
+                        </div>
+                        <div className="commerce-support-platform-card__meta">
+                          <span
+                            className={`commerce-status-pill${
+                              platform.status === "connected" ? " is-live" : ""
+                            }`}
+                          >
+                            <span className="pill-dot" />
+                            {platform.status}
+                          </span>
+                          <span>待处理 {platform.queueCount || 0}</span>
+                        </div>
+                        <div className="commerce-support-platform-card__desc">
+                          {platform.description}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="commerce-browser-section">
+                <div className="commerce-section-head">
+                  <div className="commerce-section-head__copy">
+                    <strong>客服队列</strong>
+                    <span>优先看 open / awaiting-human，replied 只保留审计。</span>
+                  </div>
+                  <span className="commerce-count-badge">{supportThreads.length}</span>
+                </div>
+                <div className="commerce-support-queue">
+                  {supportThreads.length === 0 ? (
+                    <div className="section-note">
+                      {supportQueueLoading
+                        ? "正在刷新客服队列..."
+                        : isTaobaoSupportPlatform
+                          ? "当前还没有从千牛窗口识别到线程。先完成接入向导，再点一次“检测千牛界面”。"
+                          : "当前平台还没有拉到线程。可以先启用 demo 数据，或配置真实 inbox 接口。"}
+                    </div>
+                  ) : (
+                    supportThreads.map((thread) => (
+                      <button
+                        key={thread.id || thread.threadId}
+                        className={`commerce-support-thread-card${
+                          selectedSupportThreadId === thread.threadId ? " is-active" : ""
+                        }`}
+                        onClick={() => setSelectedSupportThreadId(thread.threadId)}
+                      >
+                        <div className="commerce-support-thread-card__top">
+                          <strong>{thread.buyerName || thread.buyerId || thread.threadId}</strong>
+                          <span className="assistant-model-badge assistant-model-badge--mono">
+                            {thread.status || "open"}
+                          </span>
+                        </div>
+                        <div className="commerce-support-thread-card__meta">
+                          {thread.orderRefs?.length ? thread.orderRefs.join(" / ") : "无订单号"} ·{" "}
+                          {thread.riskLevel || "未分级"}
+                        </div>
+                        <div className="commerce-support-thread-card__desc">
+                          {thread.latestMessage || "暂无最新消息"}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          ) : (
+            <div className="commerce-browser-stack">
+              <section className="commerce-browser-section">
+                <div className="commerce-section-head">
+                  <div className="commerce-section-head__copy">
+                    <strong>直聊 Agent</strong>
+                    <span>适合马上开聊、迭代策略和追问细节。</span>
+                  </div>
+                  <span className="commerce-count-badge">{commerceAgents.length}</span>
+                </div>
+                <div className="commerce-agent-list commerce-agent-list--grid">
+                  {commerceAgents.length === 0 ? (
+                    <div className="section-note">
+                      {teamLoading
+                        ? "正在同步本地电商团队..."
+                        : "当前还没有部门入口。先刷新团队，或检查本地 OpenClaw 是否已就绪。"}
+                    </div>
+                  ) : (
+                    commerceAgents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        className={`commerce-agent-card${
+                          selectedAgentId === agent.id && panelMode === "chat" ? " is-active" : ""
+                        }`}
+                        onClick={() => {
+                          setPanelMode("chat");
+                          setSelectedAgentId(agent.id);
+                        }}
+                      >
+                        <div className="commerce-agent-card__top">
+                          <strong>{agent.label}</strong>
+                          <span
+                            className={`assistant-model-badge${
+                              agent.status === "coming-soon" ? " assistant-model-badge--mono" : ""
+                            }`}
+                          >
+                            {agent.status === "coming-soon" ? "即将开放" : "可直聊"}
+                          </span>
+                        </div>
+                        <div className="commerce-agent-card__meta">
+                          {agent.department} · 默认模型 {agent.defaultModelId}
+                        </div>
+                        <div className="commerce-agent-card__summary">{agent.summary}</div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="commerce-browser-section">
+                <div className="commerce-section-head">
+                  <div className="commerce-section-head__copy">
+                    <strong>工作流模板</strong>
+                    <span>适合把 brief 一次填清楚，再由本地 workspace 自动编排执行。</span>
+                  </div>
+                  <span className="commerce-count-badge">{commerceWorkflows.length}</span>
+                </div>
+                <div className="commerce-workflow-list commerce-workflow-list--grid">
+                  {commerceWorkflows.length === 0 ? (
+                    <div className="section-note">
+                      {teamLoading
+                        ? "正在同步 workflow 模板..."
+                        : "当前还没有工作流模板。先刷新团队，或检查本地 workspace 是否已初始化。"}
+                    </div>
+                  ) : (
+                    commerceWorkflows.map((workflow) => (
+                      <button
+                        key={workflow.id}
+                        className={`commerce-workflow-card${
+                          selectedWorkflowId === workflow.id && panelMode === "workflow" ? " is-active" : ""
+                        }`}
+                        onClick={() => {
+                          setPanelMode("workflow");
+                          setSelectedWorkflowId(workflow.id);
+                        }}
+                      >
+                        <div className="commerce-workflow-card__top">
+                          <strong>{workflow.label}</strong>
+                          <span className="assistant-model-badge assistant-model-badge--mono">
+                            {workflow.status === "coming-soon" ? "Phase 2" : "Phase 1"}
+                          </span>
+                        </div>
+                        <div className="commerce-workflow-card__desc">{workflow.description}</div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
+        </section>
+
+        <aside className="card commerce-run-panel">
+          <div className="commerce-run-panel__header">
+            <div>
+              <div className="card-title">
+                {panelMode === "support" ? "规则与审计" : "项目产物"}
+              </div>
+              <div className="card-subtitle">
+                {panelMode === "support"
+                  ? "平台配置、自动化规则和审计记录统一收在右侧。"
+                  : "工作流结果会直接落盘，并可复制、导出或打开。"}
+              </div>
+            </div>
+          </div>
+
+          {panelMode === "support" ? (
+            <>
+              <div className="commerce-run-panel__summary">
+                <article className="commerce-run-stat">
+                  <span className="commerce-run-stat__label">当前平台</span>
+                  <strong>{selectedSupportPlatform?.label || "--"}</strong>
+                  <span>{supportPlatformStatusLabel}</span>
+                </article>
+                <article className="commerce-run-stat">
+                  <span className="commerce-run-stat__label">待处理 / 待审批</span>
+                  <strong>
+                    {selectedSupportPlatform?.queueCount || 0} /{" "}
+                    {selectedSupportPlatform?.pendingApprovalCount || 0}
+                  </strong>
+                  <span>仅本机在线时生效</span>
+                </article>
+              </div>
+
+              <div className="commerce-run-panel__body">
+                <section className="commerce-run-panel__section">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>平台配置</strong>
+                      <span>
+                        {isTaobaoSupportPlatform
+                          ? "淘宝 V1 改成千牛桌面版 + 辅助功能控制。先完成向导，再启动监听。"
+                          : "API 优先，必要时可补 RPA 命令。敏感字段只写本机安全存储。"}
+                      </span>
+                    </div>
+                  </div>
+                  {isTaobaoSupportPlatform ? (
+                    <div className="commerce-support-setup">
+                      <div className="commerce-support-setup__summary">
+                        <article className="commerce-support-setup__stat">
+                          <span>接入状态</span>
+                          <strong>{supportSetupStatus?.status || "setup-required"}</strong>
+                          <p>{supportSetupStatus?.blockingReason || "千牛桌面端接入已满足条件。"}</p>
+                        </article>
+                        <article className="commerce-support-setup__stat">
+                          <span>当前店铺</span>
+                          <strong>{supportStoreProfiles[0]?.storeLabel || supportStoreDraft.storeLabel || "--"}</strong>
+                          <p>
+                            {supportStoreProfiles[0]?.storeId ||
+                              supportStoreDraft.storeId ||
+                              "先绑定一条要托管的千牛店铺记录。"}
+                          </p>
+                        </article>
+                      </div>
+
+                      <div className="commerce-support-setup__grid">
+                        <article className="commerce-support-setup-card">
+                          <div className="commerce-support-setup-card__head">
+                            <strong>系统检测</strong>
+                            <span>小懒布负责检测，千牛设置由你手动完成。</span>
+                          </div>
+                          <div className="commerce-support-checklist">
+                            <label className="commerce-support-check">
+                              <input type="checkbox" checked={supportSetupChecklist.qianniuInstalled === true} readOnly />
+                              <span>已安装千牛桌面版（Aliworkbench）</span>
+                            </label>
+                            <label className="commerce-support-check">
+                              <input type="checkbox" checked={supportSetupChecklist.xiaolanbuAccessibilityGranted === true} readOnly />
+                              <span>已授权小懒布辅助功能</span>
+                            </label>
+                            <label className="commerce-support-check">
+                              <input type="checkbox" checked={supportSetupChecklist.qianniuRunning === true} readOnly />
+                              <span>千牛当前正在运行</span>
+                            </label>
+                          </div>
+                          <div className="result-actions">
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              onClick={() => void handleRequestSupportAccessibility()}
+                              disabled={supportSavePending}
+                            >
+                              {supportSavePending ? "处理中..." : "申请辅助功能权限"}
+                            </button>
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              onClick={() => void loadSupportSetupState(selectedSupportPlatformId)}
+                              disabled={supportSavePending}
+                            >
+                              刷新状态
+                            </button>
+                          </div>
+                        </article>
+
+                        <article className="commerce-support-setup-card">
+                          <div className="commerce-support-setup-card__head">
+                            <strong>千牛手动设置</strong>
+                            <span>按飞书方案逐项确认，完成后小懒布才会开始监听。</span>
+                          </div>
+                          <div className="commerce-support-checklist">
+                            {[
+                              ["multiStoreModeConfirmed", "已使用多店铺模式登录"],
+                              ["narratorModeEnabled", "已打开讲述人模式"],
+                              ["bubbleModeEnabled", "已打开气泡模式"],
+                              ["popupReminderEnabled", "已打开弹窗提醒"],
+                              ["messageAutoPinEnabled", "已打开消息自动置顶"],
+                              ["qianniuRestartConfirmed", "完成设置后已重启千牛"],
+                            ].map(([step, label]) => (
+                              <label className="commerce-support-check" key={step}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(supportSetupChecklist[step])}
+                                  onChange={(event) =>
+                                    void handleSupportSetupStepToggle(step, event.target.checked)
+                                  }
+                                />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </article>
+
+                        <article className="commerce-support-setup-card">
+                          <div className="commerce-support-setup-card__head">
+                            <strong>绑定店铺</strong>
+                            <span>先绑定一个店铺标签，后面的队列和审计都会按它归属。</span>
+                          </div>
+                          <div className="commerce-support-form-grid">
+                            <label className="field">
+                              <span>店铺 ID</span>
+                              <input
+                                type="text"
+                                value={supportStoreDraft.storeId}
+                                onChange={(event) =>
+                                  setSupportStoreDraft((current) => ({
+                                    ...current,
+                                    storeId: event.target.value,
+                                  }))
+                                }
+                                placeholder="例如 taobao-main-store"
+                              />
+                            </label>
+                            <label className="field">
+                              <span>店铺名称</span>
+                              <input
+                                type="text"
+                                value={supportStoreDraft.storeLabel}
+                                onChange={(event) =>
+                                  setSupportStoreDraft((current) => ({
+                                    ...current,
+                                    storeLabel: event.target.value,
+                                  }))
+                                }
+                                placeholder="例如 小懒布生活馆"
+                              />
+                            </label>
+                            <label className="field field--full">
+                              <span>店铺别名</span>
+                              <input
+                                type="text"
+                                value={supportStoreDraft.shopAlias}
+                                onChange={(event) =>
+                                  setSupportStoreDraft((current) => ({
+                                    ...current,
+                                    shopAlias: event.target.value,
+                                  }))
+                                }
+                                placeholder="例如 主店 / 天猫店"
+                              />
+                            </label>
+                          </div>
+                          <div className="result-actions">
+                            <button
+                              className="primary-button"
+                              type="button"
+                              onClick={() => void handleBindSupportStore()}
+                              disabled={supportSavePending}
+                            >
+                              {supportSavePending ? "绑定中..." : "绑定店铺"}
+                            </button>
+                          </div>
+                        </article>
+                      </div>
+
+                      <div className="commerce-support-setup__toolbar">
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => void handleInspectSupportUi()}
+                          disabled={supportQueueLoading}
+                        >
+                          {supportQueueLoading ? "检测中..." : "检测千牛界面"}
+                        </button>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={() => void handleToggleSupportMonitor(true)}
+                          disabled={supportSavePending || Boolean(supportSetupStatus?.blockingReason)}
+                        >
+                          {supportSavePending ? "处理中..." : "开始监听"}
+                        </button>
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => void handleToggleSupportMonitor(false)}
+                          disabled={supportSavePending}
+                        >
+                          暂停监听
+                        </button>
+                      </div>
+
+                      {supportUiInspect ? (
+                        <div className="commerce-support-setup__inspect">
+                          <div className="commerce-section-head">
+                            <div className="commerce-section-head__copy">
+                              <strong>最近一次 UI 检测</strong>
+                              <span>
+                                识别到 {Array.isArray(supportUiInspect?.derivedThreads) ? supportUiInspect.derivedThreads.length : 0} 条候选会话，
+                                当前窗口 {Array.isArray(supportUiInspect?.windowTitles) ? supportUiInspect.windowTitles.join(" / ") || "--" : "--"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="section-note">
+                            当前淘宝自动化依赖千牛桌面版。若千牛 UI 改版导致识别失效，这里会先报错，不会假装发送成功。
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="commerce-support-setup__inspect">
+                      <div className="commerce-section-head">
+                        <div className="commerce-section-head__copy">
+                          <strong>{selectedSupportPlatform?.label || "平台规划位"}</strong>
+                          <span>旧的 API / demo 客服链已经删除。这里暂时只保留阶段说明，不开放配置。</span>
+                        </div>
+                      </div>
+                      <div className="section-note">
+                        {selectedSupportPlatform?.description ||
+                          "当前平台暂未开放客服自动化执行。等桌面接入方案明确后，再补真正的消息监听和回复链。"}
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="commerce-run-panel__section">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>自动化规则</strong>
+                      <span>低风险自动回复，高风险强制人工审批。</span>
+                    </div>
+                  </div>
+                  <div className="commerce-support-rule-list">
+                    <label className="commerce-toggle">
+                      <input
+                        type="checkbox"
+                        checked={supportRulesForm.enabled}
+                        onChange={(event) =>
+                          setSupportRulesForm((current) => ({
+                            ...current,
+                            enabled: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>启用客服自动化轮询</span>
+                    </label>
+                    <label className="commerce-toggle">
+                      <input
+                        type="checkbox"
+                        checked={supportRulesForm.autoRunTriage}
+                        onChange={(event) =>
+                          setSupportRulesForm((current) => ({
+                            ...current,
+                            autoRunTriage: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>自动先跑分诊</span>
+                    </label>
+                    <label className="commerce-toggle">
+                      <input
+                        type="checkbox"
+                        checked={supportRulesForm.autoReplyLowRisk}
+                        onChange={(event) =>
+                          setSupportRulesForm((current) => ({
+                            ...current,
+                            autoReplyLowRisk: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>低风险自动发送回复</span>
+                    </label>
+                    <label className="commerce-toggle">
+                      <input
+                        type="checkbox"
+                        checked={supportRulesForm.requireHumanForHighRisk}
+                        onChange={(event) =>
+                          setSupportRulesForm((current) => ({
+                            ...current,
+                            requireHumanForHighRisk: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>高风险强制人工审批</span>
+                    </label>
+                    <label className="field">
+                      <span>轮询间隔（毫秒）</span>
+                      <input
+                        type="number"
+                        min="5000"
+                        step="1000"
+                        value={supportRulesForm.pollIntervalMs}
+                        onChange={(event) =>
+                          setSupportRulesForm((current) => ({
+                            ...current,
+                            pollIntervalMs: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="result-actions">
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => void handleSupportRulesSave()}
+                      disabled={supportSavePending}
+                    >
+                      {supportSavePending ? "保存中..." : "保存自动化规则"}
+                    </button>
+                  </div>
+                </section>
+
+                <section className="commerce-run-panel__section commerce-run-panel__section--detail">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>审计记录</strong>
+                      <span>所有自动回复、人工批准、失败重试都会落日志。</span>
+                    </div>
+                    <span className="commerce-count-badge">{supportAudit.length}</span>
+                  </div>
+                  <div className="commerce-support-audit-list">
+                    {supportAudit.length === 0 ? (
+                      <div className="section-note">当前平台还没有客服审计记录。</div>
+                    ) : (
+                      supportAudit.map((entry) => (
+                        <article className="commerce-support-audit-row" key={entry.id}>
+                          <div className="commerce-support-audit-row__top">
+                            <strong>{entry.title || entry.type || "audit"}</strong>
+                            <span className="assistant-model-badge assistant-model-badge--mono">
+                              {entry.outcome || "logged"}
+                            </span>
+                          </div>
+                          <div className="commerce-support-audit-row__meta">
+                            {entry.platform || selectedSupportPlatformId || "--"} ·{" "}
+                            {formatDateTime(entry.createdAt)}
+                          </div>
+                          <p>{entry.detail || "无详情"}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="commerce-run-panel__footnote">
+                当前自动化仅在本机在线时生效。关闭小懒布后，不会继续轮询或自动回复。
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="commerce-run-panel__summary">
+                <article className="commerce-run-stat">
+                  <span className="commerce-run-stat__label">累计运行</span>
+                  <strong>{commerceRuns.length}</strong>
+                  <span>{completedRunCount} 次已成功</span>
+                </article>
+                <article className="commerce-run-stat">
+                  <span className="commerce-run-stat__label">当前账号范围</span>
+                  <strong>{currentScopeId || "--"}</strong>
+                  <span>本地 provider {availableGatewayModels[0]?.providerId || "openai"}</span>
+                </article>
+              </div>
+
+              <div className="commerce-run-panel__body">
+                <section className="commerce-run-panel__section">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>最近运行</strong>
+                      <span>点一条 run，就能在下方查看 summary 和产物。</span>
+                    </div>
+                    <span className="commerce-count-badge">{commerceRuns.length}</span>
+                  </div>
+                  <div className="commerce-run-list">
+                    {commerceRuns.length === 0 ? (
+                      <div className="section-note">还没有 workflow run。先运行一个模板，右侧会显示产物和 Markdown 汇总。</div>
+                    ) : (
+                      commerceRuns.map((run) => (
+                        <button
+                          key={run.id}
+                          className={`commerce-run-card${selectedRunId === run.id ? " is-active" : ""}`}
+                          onClick={() => setSelectedRunId(run.id)}
+                        >
+                          <div className="commerce-run-card__top">
+                            <strong>{run.workflowLabel || run.workflowId}</strong>
+                            <span className="assistant-model-badge assistant-model-badge--mono">
+                              {run.status}
+                            </span>
+                          </div>
+                          <div className="commerce-run-card__meta">
+                            {run.targetAgentId} · {formatDateTime(run.startedAt)}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                <section className="commerce-run-panel__section commerce-run-panel__section--detail">
+                  <div className="commerce-section-head">
+                    <div className="commerce-section-head__copy">
+                      <strong>当前选中</strong>
+                      <span>
+                        {selectedRun
+                          ? `${selectedRun.workflowLabel || selectedRun.workflowId} · ${selectedRun.status}`
+                          : "先从上面选一条 run"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedRun ? (
+                    <div className="commerce-run-detail">
+                      <div className="commerce-run-detail__actions">
+                        <button
+                          className="ghost-button small"
+                          onClick={() => void exportCommerceRun({ runId: selectedRun.id })}
+                        >
+                          导出 Markdown
+                        </button>
+                        <button
+                          className="ghost-button small"
+                          onClick={() => copyChatText(selectedRunSummary, "工作流结果已复制")}
+                          disabled={!selectedRunSummary}
+                        >
+                          复制结果
+                        </button>
+                      </div>
+
+                      <div className="commerce-run-detail__summary">
+                        <pre>{selectedRunSummary || "当前 run 还没有可展示的 Markdown 汇总。"}</pre>
+                      </div>
+
+                      <div className="commerce-section-label">产物文件</div>
+                      <div className="commerce-artifact-list">
+                        {selectedRunArtifacts.length === 0 ? (
+                          <div className="section-note">当前 run 还没有附带 artifact 文件。</div>
+                        ) : (
+                          selectedRunArtifacts.map((artifact) => (
+                            <div className="commerce-artifact-row" key={artifact.id || artifact.path}>
+                              <div>
+                                <strong>{artifact.label || artifact.id}</strong>
+                                <div className="commerce-artifact-row__path">{artifact.path}</div>
+                              </div>
+                              <button
+                                className="ghost-button small"
+                                onClick={() => void openCommerceArtifact({ path: artifact.path })}
+                              >
+                                打开
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="section-note">
+                      先运行一条 workflow，或从上方最近运行里点一条记录，这里会显示 summary 与产物文件。
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <div className="commerce-run-panel__footnote">
+                本地 provider: {availableGatewayModels[0]?.providerId || "openai"} · 当前账号范围 {currentScopeId || "--"}
+              </div>
+            </>
+          )}
         </aside>
       </div>
     </section>
@@ -6983,9 +8829,14 @@ function SettingsView({
                     ? deploymentDashboardUrl || "http://127.0.0.1:18789"
                     : "仅可在对应设备本地使用"
                   : deploymentLocalDashboardUrl;
+              const deploymentAvailableModels = resolveScopedGatewayModelCatalog(
+                availableGatewayModels,
+                deployment,
+                localRuntimeStatus,
+              );
               const deploymentModelId = resolveDeploymentGatewayModelId(
                 deployment,
-                resolveDefaultGatewayModelId(availableGatewayModels),
+                resolveDefaultGatewayModelId(deploymentAvailableModels),
               );
               const deploymentModelSwitchPending =
                 actionPendingId === deployment.id && actionPendingType === "switchModel";
@@ -7037,12 +8888,12 @@ function SettingsView({
                         onChange={(event) => onDeploymentModelChange(deployment, event.target.value)}
                         disabled={
                           deploymentModelSwitchPending ||
-                          availableGatewayModels.length === 0 ||
+                          deploymentAvailableModels.length === 0 ||
                           deploymentEffectiveStatus !== "running" ||
                           foreignDeviceLocalDeployment
                         }
                       >
-                        {availableGatewayModels.map((item) => (
+                        {deploymentAvailableModels.map((item) => (
                           <option key={item.id} value={item.id}>
                             {formatGatewayModelLabel(item)}
                           </option>
@@ -7401,10 +9252,25 @@ export function App() {
     const existingBootstrap =
       getStoredLocalBootstrap(resolvedScopeId) ??
       (deployment ? buildLocalBootstrapFromDeployment(deployment) : null);
+    const runtimeModelId = normalizeLocalBootstrapModelCandidate(runtimeStatus?.currentModelId);
     const defaultModelId =
+      runtimeModelId ||
       normalizeLocalBootstrapModelCandidate(existingBootstrap?.modelId) ||
+      normalizeLocalBootstrapModelCandidate(existingBootstrap?.concreteModelId) ||
       normalizeLocalBootstrapModelCandidate(bootstrapResult?.defaultModelId) ||
       resolveDefaultGatewayModelId(modelCatalog);
+    const allowedModelIds = Array.from(
+      new Set(
+        [
+          ...(Array.isArray(bootstrapResult?.allowedModelIds) ? bootstrapResult.allowedModelIds : []),
+          ...(Array.isArray(existingBootstrap?.allowedModelIds) ? existingBootstrap.allowedModelIds : []),
+          runtimeModelId,
+          defaultModelId,
+        ]
+          .map((item) => normalizeLocalBootstrapModelCandidate(item))
+          .filter(Boolean),
+      ),
+    );
     const gatewayToken =
       getDashboardToken(runtimeStatus?.dashboardUrl) ||
       getDashboardToken(existingBootstrap?.dashboardUrl) ||
@@ -7429,9 +9295,7 @@ export function App() {
         modelId: defaultModelId,
         concreteModelId: defaultModelId,
         requestedModelId: defaultModelId,
-        allowedModelIds: Array.isArray(bootstrapResult?.allowedModelIds)
-          ? bootstrapResult.allowedModelIds
-          : existingBootstrap?.allowedModelIds ?? [defaultModelId],
+        allowedModelIds: allowedModelIds.length ? allowedModelIds : [defaultModelId],
         gatewayPort: existingBootstrap?.gatewayPort ?? 18789,
         gatewayBind: existingBootstrap?.gatewayBind ?? "loopback",
         browserControlPort: existingBootstrap?.browserControlPort ?? 18791,
@@ -7548,23 +9412,29 @@ export function App() {
           "同步本地 API Key 失败，请稍后再试。",
       );
     }
+    const syncedBootstrapPayload = applyRuntimeManagedModelSelection(bootstrapPayload, syncResult);
+    setStoredLocalBootstrap(targetScopeId, syncedBootstrapPayload);
 
     setWorkspaceState((current) => ({
       ...current,
       localDeployError: "",
       localDeployFeedback: createdDeployment
-        ? "检测到本机已有 OpenClaw，已自动为当前账号补回本地 API Key。"
-        : "当前账号的本地 API Key 已同步到本机 OpenClaw。",
+        ? syncResult?.modelSelectionWarning
+          ? `检测到本机已有 OpenClaw，已自动为当前账号补回本地 API Key。${syncResult.modelSelectionWarning}`
+          : "检测到本机已有 OpenClaw，已自动为当前账号补回本地 API Key。"
+        : syncResult?.modelSelectionWarning
+          ? `当前账号的本地 API Key 已同步到本机 OpenClaw。${syncResult.modelSelectionWarning}`
+          : "当前账号的本地 API Key 已同步到本机 OpenClaw。",
       localDeployResult: {
         deployment: targetDeployment,
-        bootstrap: bootstrapPayload,
+        bootstrap: syncedBootstrapPayload,
         runtime: syncResult,
       },
     }));
 
     return {
       deployment: targetDeployment,
-      bootstrapPayload,
+      bootstrapPayload: syncedBootstrapPayload,
       runtimeStatus: nextStatus,
       createdDeployment,
     };
@@ -8769,6 +10639,14 @@ export function App() {
           "本地 OpenClaw 初始化失败，请稍后再试。",
       );
     }
+    const syncedBootstrapPayload = applyRuntimeManagedModelSelection(
+      bootstrapPayload,
+      bootstrapResult,
+    );
+    setStoredLocalBootstrap(
+      syncedBootstrapPayload?.accountScopeId || currentScopeId || deployment?.workspaceId || "",
+      syncedBootstrapPayload,
+    );
 
     setLocalRuntimeStatus((current) => ({
       ...current,
@@ -8831,28 +10709,28 @@ export function App() {
       currentModelId:
         typeof bootstrapResult?.status?.currentModelId === "string"
           ? bootstrapResult.status.currentModelId
-          : typeof bootstrapPayload?.modelId === "string"
-            ? bootstrapPayload.modelId
+          : typeof syncedBootstrapPayload?.modelId === "string"
+            ? syncedBootstrapPayload.modelId
             : current.currentModelId,
       localApiKeyConfigured: Boolean(
-        bootstrapResult?.status?.localApiKeyConfigured ?? bootstrapPayload?.apiKey,
+        bootstrapResult?.status?.localApiKeyConfigured ?? syncedBootstrapPayload?.apiKey,
       ),
       ownerAccountScopeId:
         typeof bootstrapResult?.status?.ownerAccountScopeId === "string"
           ? bootstrapResult.status.ownerAccountScopeId
-          : bootstrapPayload?.accountScopeId ?? current.ownerAccountScopeId,
+          : syncedBootstrapPayload?.accountScopeId ?? current.ownerAccountScopeId,
       ownerUserId:
         typeof bootstrapResult?.status?.ownerUserId === "string"
           ? bootstrapResult.status.ownerUserId
-          : bootstrapPayload?.userId ?? current.ownerUserId,
+          : syncedBootstrapPayload?.userId ?? current.ownerUserId,
       ownerDisplayName:
         typeof bootstrapResult?.status?.ownerDisplayName === "string"
           ? bootstrapResult.status.ownerDisplayName
-          : bootstrapPayload?.displayName ?? current.ownerDisplayName,
+          : syncedBootstrapPayload?.displayName ?? current.ownerDisplayName,
       ownerEmail:
         typeof bootstrapResult?.status?.ownerEmail === "string"
           ? bootstrapResult.status.ownerEmail
-          : bootstrapPayload?.email ?? current.ownerEmail,
+          : syncedBootstrapPayload?.email ?? current.ownerEmail,
       authSyncedAt:
         typeof bootstrapResult?.status?.authSyncedAt === "string"
           ? bootstrapResult.status.authSyncedAt
@@ -8868,9 +10746,11 @@ export function App() {
       baseUrl:
         typeof bootstrapResult?.status?.baseUrl === "string"
           ? bootstrapResult.status.baseUrl
-          : bootstrapPayload?.baseUrl ?? current.baseUrl,
-      workspaceId: bootstrapPayload?.workspaceId ?? deployment?.workspaceId ?? current.workspaceId,
-      deploymentId: bootstrapPayload?.deploymentId ?? deployment?.id ?? current.deploymentId,
+          : syncedBootstrapPayload?.baseUrl ?? current.baseUrl,
+      workspaceId:
+        syncedBootstrapPayload?.workspaceId ?? deployment?.workspaceId ?? current.workspaceId,
+      deploymentId:
+        syncedBootstrapPayload?.deploymentId ?? deployment?.id ?? current.deploymentId,
       bindingUpdatedAt: new Date().toISOString(),
       bootstrapLogUpdatedAt: Date.now(),
       bindingMissingDuringBootstrap: false,
@@ -8886,9 +10766,9 @@ export function App() {
       currentModelId:
         typeof bootstrapResult?.status?.currentModelId === "string"
           ? bootstrapResult.status.currentModelId
-          : bootstrapPayload?.modelId ?? localRuntimeStatus.currentModelId,
+          : syncedBootstrapPayload?.modelId ?? localRuntimeStatus.currentModelId,
       localApiKeyConfigured: Boolean(
-        bootstrapResult?.status?.localApiKeyConfigured ?? bootstrapPayload?.apiKey,
+        bootstrapResult?.status?.localApiKeyConfigured ?? syncedBootstrapPayload?.apiKey,
       ),
       localDeviceId:
         typeof bootstrapResult?.status?.localDeviceId === "string"
@@ -8901,19 +10781,19 @@ export function App() {
       ownerAccountScopeId:
         typeof bootstrapResult?.status?.ownerAccountScopeId === "string"
           ? bootstrapResult.status.ownerAccountScopeId
-          : bootstrapPayload?.accountScopeId ?? localRuntimeStatus.ownerAccountScopeId,
+          : syncedBootstrapPayload?.accountScopeId ?? localRuntimeStatus.ownerAccountScopeId,
       ownerUserId:
         typeof bootstrapResult?.status?.ownerUserId === "string"
           ? bootstrapResult.status.ownerUserId
-          : bootstrapPayload?.userId ?? localRuntimeStatus.ownerUserId,
+          : syncedBootstrapPayload?.userId ?? localRuntimeStatus.ownerUserId,
       ownerDisplayName:
         typeof bootstrapResult?.status?.ownerDisplayName === "string"
           ? bootstrapResult.status.ownerDisplayName
-          : bootstrapPayload?.displayName ?? localRuntimeStatus.ownerDisplayName,
+          : syncedBootstrapPayload?.displayName ?? localRuntimeStatus.ownerDisplayName,
       ownerEmail:
         typeof bootstrapResult?.status?.ownerEmail === "string"
           ? bootstrapResult.status.ownerEmail
-          : bootstrapPayload?.email ?? localRuntimeStatus.ownerEmail,
+          : syncedBootstrapPayload?.email ?? localRuntimeStatus.ownerEmail,
       authSyncedAt:
         typeof bootstrapResult?.status?.authSyncedAt === "string"
           ? bootstrapResult.status.authSyncedAt
@@ -8929,9 +10809,15 @@ export function App() {
       baseUrl:
         typeof bootstrapResult?.status?.baseUrl === "string"
           ? bootstrapResult.status.baseUrl
-          : bootstrapPayload?.baseUrl ?? localRuntimeStatus.baseUrl,
-      workspaceId: bootstrapPayload?.workspaceId ?? deployment?.workspaceId ?? localRuntimeStatus.workspaceId,
-      deploymentId: bootstrapPayload?.deploymentId ?? deployment?.id ?? localRuntimeStatus.deploymentId,
+          : syncedBootstrapPayload?.baseUrl ?? localRuntimeStatus.baseUrl,
+      workspaceId:
+        syncedBootstrapPayload?.workspaceId ??
+        deployment?.workspaceId ??
+        localRuntimeStatus.workspaceId,
+      deploymentId:
+        syncedBootstrapPayload?.deploymentId ??
+        deployment?.id ??
+        localRuntimeStatus.deploymentId,
       bindingUpdatedAt: new Date().toISOString(),
       logPath:
         typeof bootstrapResult?.logPath === "string" ? bootstrapResult.logPath : localRuntimeStatus.logPath,
@@ -8962,10 +10848,13 @@ export function App() {
       localDeployError: "",
       localDeployResult: {
         deployment,
-        bootstrap: bootstrapPayload,
+        bootstrap: syncedBootstrapPayload,
         runtime: bootstrapResult,
       },
-      localDeployFeedback: "本地 OpenClaw 已部署完成，现在可以直接开始聊天。",
+      localDeployFeedback:
+        bootstrapResult?.modelSelectionWarning && bootstrapResult.modelId !== bootstrapPayload?.modelId
+          ? `本地 OpenClaw 已部署完成。${bootstrapResult.modelSelectionWarning}`
+          : "本地 OpenClaw 已部署完成，现在可以直接开始聊天。",
     }));
 
     return bootstrapResult;
@@ -9525,8 +11414,6 @@ export function App() {
           ),
         };
 
-        setStoredLocalBootstrap(storageKey, nextBootstrap);
-
         const canFastSwitchLocalSession =
           localBootstrapTransportEquals(baseBootstrap, nextBootstrap) &&
           typeof nextBootstrap.dashboardUrl === "string" &&
@@ -9582,35 +11469,49 @@ export function App() {
           runtimeSyncResult = syncResult;
         }
 
+        const syncedBootstrap = applyRuntimeManagedModelSelection(
+          nextBootstrap,
+          runtimeSyncResult,
+        );
+        setStoredLocalBootstrap(storageKey, syncedBootstrap);
+        const effectiveModelId =
+          normalizeLocalBootstrapModelCandidate(runtimeSyncResult?.modelId) ||
+          normalizeLocalBootstrapModelCandidate(syncedBootstrap?.modelId) ||
+          normalizedModelId;
+
         const nextRuntimeStatus = await syncLocalRuntimeStatus(runtimeSyncResult?.status);
         const updatedDeployment = buildOptimisticDeploymentModelRecord(
           buildSyntheticLocalDeployment(
             {
               ...localRuntimeStatus,
               ...nextRuntimeStatus,
-              currentModelId: normalizedModelId,
-              ownerAccountScopeId: nextBootstrap.accountScopeId || localRuntimeStatus.ownerAccountScopeId,
-              workspaceId: nextBootstrap.workspaceId || localRuntimeStatus.workspaceId,
+              currentModelId: effectiveModelId,
+              ownerAccountScopeId:
+                syncedBootstrap.accountScopeId || localRuntimeStatus.ownerAccountScopeId,
+              workspaceId: syncedBootstrap.workspaceId || localRuntimeStatus.workspaceId,
               localApiKeyConfigured: true,
-              dashboardUrl: nextBootstrap.dashboardUrl || nextRuntimeStatus?.dashboardUrl,
+              dashboardUrl: syncedBootstrap.dashboardUrl || nextRuntimeStatus?.dashboardUrl,
               browserControlUrl:
-                nextBootstrap.browserControlUrl || nextRuntimeStatus?.browserControlUrl,
-              baseUrl: nextBootstrap.baseUrl || nextRuntimeStatus?.baseUrl,
+                syncedBootstrap.browserControlUrl || nextRuntimeStatus?.browserControlUrl,
+              baseUrl: syncedBootstrap.baseUrl || nextRuntimeStatus?.baseUrl,
             },
-            nextBootstrap.accountScopeId || currentScopeId || deployment.workspaceId || "",
+            syncedBootstrap.accountScopeId || currentScopeId || deployment.workspaceId || "",
           ) ?? deployment,
-          normalizedModelId,
+          effectiveModelId,
         );
+        applyDeploymentSnapshot(updatedDeployment);
 
         setWorkspaceState((current) => ({
           ...current,
           actionPendingId: null,
           actionPendingType: "",
           createError: "",
-          createFeedback: "",
+          createFeedback:
+            runtimeSyncResult?.modelSelectionWarning && effectiveModelId !== normalizedModelId
+              ? runtimeSyncResult.modelSelectionWarning
+              : "",
         }));
-
-        return { ok: true, modelId: normalizedModelId, deployment: updatedDeployment };
+        return { ok: true, modelId: effectiveModelId, deployment: updatedDeployment };
       }
 
       const result = await fetchJson(`/deployments/${deploymentId}/model`, {
@@ -9912,6 +11813,22 @@ export function App() {
                   ...current,
                   createFeedback: "",
                 }))
+              }
+              onResolvePendingModelSwitch={(deploymentId) =>
+                setWorkspaceState((current) => {
+                  if (
+                    current.actionPendingId !== deploymentId ||
+                    current.actionPendingType !== "switchModel"
+                  ) {
+                    return current;
+                  }
+
+                  return {
+                    ...current,
+                    actionPendingId: null,
+                    actionPendingType: "",
+                  };
+                })
               }
             />
           ) : null}

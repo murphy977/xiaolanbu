@@ -12,7 +12,34 @@ const {
   COMMERCE_WORKFLOW_DEFINITIONS,
   buildCommerceRuntimeDefinitions,
   buildAgentManagedFiles,
+  buildAgentScaffoldFiles,
 } = require("./commerce-team");
+const {
+  LOCAL_MANAGED_MAIN_AGENTS_TEMPLATE,
+  LOCAL_MANAGED_WORKSPACE_FILES,
+  shouldDeleteManagedBootstrap,
+  shouldReplaceManagedLocalAgents,
+} = require("./local-openclaw-workspace");
+const {
+  DEFAULT_SUPPORT_RULES,
+  bindSupportStore,
+  confirmSupportSetupStep,
+  getSupportAutomationRules,
+  getSupportPlatformStatus,
+  getSupportSetupStatus,
+  getSupportThread,
+  inspectSupportUI,
+  listSupportAudit,
+  listSupportPlatforms,
+  pullSupportInbox,
+  requestSupportAccessibility,
+  requestSupportAction,
+  saveSupportDecision,
+  sendSupportReply,
+  setSupportAutomationRules,
+  startSupportPlatformMonitor,
+  stopSupportPlatformMonitor,
+} = require("./support-automation");
 
 const IS_WINDOWS = process.platform === "win32";
 const WINDOWS_LOCAL_APP_DATA =
@@ -101,8 +128,19 @@ const LOCAL_COMMERCE_RUNS_DIR = path.join(LOCAL_COMMERCE_STATE_DIR, "runs");
 const LOCAL_COMMERCE_ACTIVE_RUNS_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "active-runs.json");
 const LOCAL_COMMERCE_MANIFEST_PATH = path.join(LOCAL_COMMERCE_STATE_DIR, "team.json");
 const COMMERCE_PLUGIN_ID = "open-prose";
-const COMMERCE_TEAM_VERSION = "2026.3.28";
+const COMMERCE_TEAM_VERSION = "2026.3.30";
 const LOCAL_RESPONSES_MODEL_ALIAS = "openclaw";
+const MANAGED_MODEL_PROBE_TIMEOUT_MS = Number(
+  process.env.XLB_MANAGED_MODEL_PROBE_TIMEOUT_MS || 12000,
+);
+const MANAGED_MODEL_STABILITY_ORDER = Object.freeze([
+  "qwen35-plus",
+  "gpt-4o",
+  "gpt-5.2",
+  "gpt-5.4",
+]);
+const MANAGED_MEMORY_SEARCH_MODEL_ID =
+  process.env.XLB_MANAGED_MEMORY_SEARCH_MODEL_ID || "text-embedding-v4";
 const GATEWAY_CHAT_EVENT_CHANNEL = "xiaolanbu:gateway-chat-event";
 const RESPONSES_STREAM_IDLE_TIMEOUT_MS = Number(
   process.env.XLB_RESPONSES_STREAM_IDLE_TIMEOUT_MS || 12000,
@@ -131,6 +169,31 @@ function logGatewayChatDebug(message, details = {}) {
   } catch {
     // ignore logging failures
   }
+}
+
+function applyManagedMemorySearchConfig(config, { baseUrl, apiKey } = {}) {
+  if (!isPlainObject(config)) {
+    return;
+  }
+
+  config.agents = isPlainObject(config.agents) ? config.agents : {};
+  config.agents.defaults = isPlainObject(config.agents.defaults) ? config.agents.defaults : {};
+  const nextMemorySearch = isPlainObject(config.agents.defaults.memorySearch)
+    ? { ...config.agents.defaults.memorySearch }
+    : {};
+  nextMemorySearch.enabled = true;
+  nextMemorySearch.provider = "openai";
+  nextMemorySearch.model = MANAGED_MEMORY_SEARCH_MODEL_ID;
+  nextMemorySearch.fallback = "none";
+  const remote = isPlainObject(nextMemorySearch.remote) ? { ...nextMemorySearch.remote } : {};
+  if (typeof baseUrl === "string" && baseUrl.trim()) {
+    remote.baseUrl = baseUrl.trim();
+  }
+  if (typeof apiKey === "string" && apiKey.trim()) {
+    remote.apiKey = apiKey.trim();
+  }
+  nextMemorySearch.remote = remote;
+  config.agents.defaults.memorySearch = nextMemorySearch;
 }
 
 function parsePortList(value, fallback) {
@@ -211,6 +274,10 @@ const managedCloudTunnelState = {
   lastError: "",
 };
 let localGatewayTunnelEnsurePromise = null;
+const supportAutomationLoopState = {
+  timers: new Map(),
+  inFlight: new Set(),
+};
 
 function getLocalManagedPathEntries() {
   if (IS_WINDOWS) {
@@ -1827,6 +1894,7 @@ async function abortGatewayChat(params) {
 
   const handle = await acquireCachedLocalGatewayRpcClient({
     dashboardUrl: params?.dashboardUrl,
+    disableCache: true,
   });
   const { client } = handle;
 
@@ -1897,6 +1965,7 @@ async function sendGatewayChatMessageViaRpc(webContents, params) {
       : createGatewayRequestId();
   const handle = await acquireCachedLocalGatewayRpcClient({
     dashboardUrl: params?.dashboardUrl,
+    disableCache: true,
   });
   const { client } = handle;
   let unsubscribeGatewayEvents = () => {};
@@ -2087,6 +2156,7 @@ async function sendGatewayChatMessageViaResponses(webContents, params) {
     typeof params?.sessionKey === "string" && params.sessionKey.trim()
       ? params.sessionKey.trim()
       : "main";
+  const responsesSessionKey = resolveGatewayResponsesSessionKey(params);
   const message =
     typeof params?.message === "string" ? params.message.trim() : "";
   const attachments =
@@ -2212,7 +2282,7 @@ async function sendGatewayChatMessageViaResponses(webContents, params) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
           "x-openclaw-agent-id": agentId,
-          "x-openclaw-session-key": sessionKey,
+          "x-openclaw-session-key": responsesSessionKey,
         },
         body: JSON.stringify({
           model: "openclaw",
@@ -3251,6 +3321,24 @@ function resolveManagedModelCompat(modelId) {
   return compat;
 }
 
+function resolveManagedModelReasoning(modelId) {
+  const normalized = typeof modelId === "string" ? modelId.trim().toLowerCase() : "";
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    normalized.startsWith("gpt-5") ||
+    normalized.startsWith("o1") ||
+    normalized.startsWith("o3") ||
+    normalized.startsWith("o4")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function applyManagedModelCompat(target, modelId) {
   if (!isPlainObject(target)) {
     return;
@@ -3355,10 +3443,10 @@ function extractConcreteManagedModelIdFromSessionStore(config) {
   for (const key of resolveLocalMainSessionStoreKeys(config)) {
     const entry = isPlainObject(store[key]) ? store[key] : null;
     const candidate =
-      typeof entry?.model === "string" && entry.model.trim()
-        ? entry.model
-        : typeof entry?.modelOverride === "string" && entry.modelOverride.trim()
+      typeof entry?.modelOverride === "string" && entry.modelOverride.trim()
           ? entry.modelOverride
+        : typeof entry?.model === "string" && entry.model.trim()
+          ? entry.model
           : "";
     const modelId = normalizeConcreteManagedModelId(candidate);
     if (modelId) {
@@ -3419,6 +3507,299 @@ function normalizeManagedModelIdList(modelIds, options = {}) {
   return normalizedList;
 }
 
+function getManagedModelStabilityRank(modelId) {
+  const normalized = normalizeConcreteManagedModelId(modelId);
+  const index = MANAGED_MODEL_STABILITY_ORDER.indexOf(normalized);
+  return index >= 0 ? index : MANAGED_MODEL_STABILITY_ORDER.length;
+}
+
+function sortManagedModelIdsByStability(modelIds, preferredModelId = "") {
+  const preferred = normalizeConcreteManagedModelId(preferredModelId);
+  const values = Array.from(
+    new Set(
+      (Array.isArray(modelIds) ? modelIds : [])
+        .map((entry) => normalizeConcreteManagedModelId(entry))
+        .filter(Boolean),
+    ),
+  );
+
+  values.sort((left, right) => {
+    if (preferred) {
+      if (left === preferred && right !== preferred) {
+        return -1;
+      }
+      if (right === preferred && left !== preferred) {
+        return 1;
+      }
+    }
+
+    const rankDiff = getManagedModelStabilityRank(left) - getManagedModelStabilityRank(right);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+    return left.localeCompare(right);
+  });
+
+  return values;
+}
+
+function filterManagedModelCatalog(modelCatalog, allowedModelIds = []) {
+  const allowed = new Set(
+    (Array.isArray(allowedModelIds) ? allowedModelIds : [])
+      .map((entry) => normalizeConcreteManagedModelId(entry))
+      .filter(Boolean),
+  );
+  if (!allowed.size) {
+    return modelCatalog;
+  }
+
+  if (Array.isArray(modelCatalog)) {
+    return modelCatalog.filter((entry) =>
+      allowed.has(normalizeConcreteManagedModelId(entry?.id)),
+    );
+  }
+
+  if (isPlainObject(modelCatalog) && Array.isArray(modelCatalog.items)) {
+    return {
+      ...modelCatalog,
+      items: modelCatalog.items.filter((entry) =>
+        allowed.has(normalizeConcreteManagedModelId(entry?.id)),
+      ),
+    };
+  }
+
+  return modelCatalog;
+}
+
+function isManagedModelHardUnavailable(errorText = "", status = 0) {
+  const normalized = typeof errorText === "string" ? errorText.trim().toLowerCase() : "";
+  if (!normalized && !status) {
+    return false;
+  }
+
+  return (
+    normalized.includes("没有可用token") ||
+    normalized.includes("no available token") ||
+    normalized.includes("key not allowed to access model") ||
+    normalized.includes("invalid model name") ||
+    normalized.includes("incorrect api key") ||
+    normalized.includes("apikey-error") ||
+    normalized.includes("model_not_found") ||
+    status === 401
+  );
+}
+
+async function probeManagedGatewayModelAvailability({
+  baseUrl,
+  apiKey,
+  modelId,
+  timeoutMs = MANAGED_MODEL_PROBE_TIMEOUT_MS,
+}) {
+  const normalizedModelId = normalizeConcreteManagedModelId(modelId);
+  if (!baseUrl || !apiKey || !normalizedModelId) {
+    return {
+      ok: false,
+      healthy: false,
+      modelId: normalizedModelId,
+      error: "missing model probe params",
+      hardUnavailable: false,
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new Error("managed model probe timeout"));
+  }, Math.max(1000, Number(timeoutMs) || MANAGED_MODEL_PROBE_TIMEOUT_MS));
+
+  try {
+    const response = await fetch(`${String(baseUrl).replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: normalizedModelId,
+        stream: false,
+        temperature: 0,
+        max_tokens: 4,
+        messages: [
+          {
+            role: "user",
+            content: "Reply with exactly OK and nothing else.",
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    const rawText = (await response.text().catch(() => "")).trim();
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        healthy: false,
+        modelId: normalizedModelId,
+        status: response.status,
+        error: rawText || `managed model probe failed with status ${response.status}`,
+        hardUnavailable: isManagedModelHardUnavailable(rawText, response.status),
+      };
+    }
+
+    return {
+      ok: true,
+      healthy: true,
+      modelId: normalizedModelId,
+      status: response.status,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      healthy: false,
+      modelId: normalizedModelId,
+      error: message,
+      hardUnavailable: isManagedModelHardUnavailable(message, 0),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveHealthyManagedModelPayload(payload) {
+  if (!isPlainObject(payload)) {
+    return {
+      ok: false,
+      error: "missing managed model payload",
+      payload,
+      requestedModelId: "",
+      modelId: "",
+      allowedModelIds: [],
+      unhealthyModelIds: [],
+      probeResults: [],
+      warning: "",
+    };
+  }
+
+  const providerId =
+    typeof payload.providerId === "string" && payload.providerId.trim()
+      ? payload.providerId.trim()
+      : "openai";
+  const apiKey =
+    typeof payload.apiKey === "string" && payload.apiKey.trim() ? payload.apiKey.trim() : "";
+  const baseUrl =
+    typeof payload.baseUrl === "string" && payload.baseUrl.trim() ? payload.baseUrl.trim() : "";
+  const existingConfigRaw = readJsonFile(LOCAL_OPENCLAW_CONFIG_PATH);
+  const requestedModelId = normalizeManagedModelId(payload.modelId, {
+    preferredModelId:
+      (typeof payload.concreteModelId === "string" && payload.concreteModelId.trim()) ||
+      (typeof payload.requestedModelId === "string" && payload.requestedModelId.trim()) ||
+      "",
+    existingConfig: existingConfigRaw,
+    providerId,
+  });
+  const requestedAllowedModelIds = normalizeManagedModelIdList(payload.allowedModelIds, {
+    primaryModelId: requestedModelId,
+    fallbackModelId: requestedModelId,
+    existingConfig: existingConfigRaw,
+    providerId,
+  });
+
+  if (!apiKey || !baseUrl || requestedAllowedModelIds.length === 0) {
+    return {
+      ok: true,
+      payload: {
+        ...payload,
+        modelId: requestedModelId,
+        concreteModelId: requestedModelId,
+        requestedModelId:
+          (typeof payload.requestedModelId === "string" && payload.requestedModelId.trim()) ||
+          requestedModelId,
+        allowedModelIds: requestedAllowedModelIds,
+      },
+      requestedModelId,
+      modelId: requestedModelId,
+      allowedModelIds: requestedAllowedModelIds,
+      unhealthyModelIds: [],
+      probeResults: [],
+      warning: "",
+      skipped: true,
+    };
+  }
+
+  const probeCandidates = sortManagedModelIdsByStability(
+    requestedAllowedModelIds,
+    requestedModelId,
+  );
+  const probeResults = [];
+  const healthyModelIds = [];
+  let transientFailureSeen = false;
+
+  for (const modelId of probeCandidates) {
+    const result = await probeManagedGatewayModelAvailability({
+      baseUrl,
+      apiKey,
+      modelId,
+    });
+    probeResults.push(result);
+    if (result.healthy) {
+      healthyModelIds.push(modelId);
+    } else if (!result.hardUnavailable) {
+      transientFailureSeen = true;
+    }
+  }
+
+  const requestedProbeResult = probeResults.find((item) => item.modelId === requestedModelId) || null;
+  const requestedModelHealthy = Boolean(requestedProbeResult?.healthy);
+  const requestedModelHardUnavailable =
+    Boolean(requestedProbeResult) &&
+    !requestedModelHealthy &&
+    Boolean(requestedProbeResult?.hardUnavailable);
+  let selectedModelId = requestedModelId;
+  let effectiveAllowedModelIds = requestedAllowedModelIds;
+  let error = "";
+  let warning = "";
+
+  if (requestedModelHealthy) {
+    selectedModelId = requestedModelId;
+  } else if (requestedModelHardUnavailable && healthyModelIds.length > 0) {
+    selectedModelId = healthyModelIds[0];
+    warning = `首选模型 ${requestedModelId} 当前不可用，已切换为 ${selectedModelId}。`;
+  } else if (healthyModelIds.length === 0) {
+    if (transientFailureSeen) {
+      selectedModelId = requestedModelId;
+    } else {
+      error = `当前账号下可用的本地模型暂不可用：${requestedAllowedModelIds.join("、")}。`;
+      selectedModelId = requestedModelId;
+    }
+  }
+
+  const unhealthyModelIds = probeResults
+    .filter((item) => !item.healthy)
+    .map((item) => item.modelId)
+    .filter(Boolean);
+
+  return {
+    ok: !error,
+    error,
+    warning,
+    requestedModelId,
+    modelId: selectedModelId,
+    allowedModelIds: effectiveAllowedModelIds,
+    unhealthyModelIds,
+    probeResults,
+    payload: {
+      ...payload,
+      modelId: selectedModelId,
+      concreteModelId: selectedModelId,
+      requestedModelId:
+        (typeof payload.requestedModelId === "string" && payload.requestedModelId.trim()) ||
+        requestedModelId,
+      allowedModelIds: effectiveAllowedModelIds,
+      modelCatalog: filterManagedModelCatalog(payload.modelCatalog, effectiveAllowedModelIds),
+    },
+  };
+}
+
 function removeProviderScopedKeys(record, providerId) {
   if (!isPlainObject(record) || !providerId) {
     return {};
@@ -3437,6 +3818,40 @@ function removeProviderScopedKeys(record, providerId) {
   }
 
   return nextRecord;
+}
+
+function alignManagedMainSessionStoreModel(config, providerId, modelId) {
+  const normalizedModelId = normalizeConcreteManagedModelId(modelId);
+  if (!providerId || !normalizedModelId) {
+    return false;
+  }
+
+  const store = readJsonFile(LOCAL_OPENCLAW_SESSION_STORE_PATH);
+  if (!isPlainObject(store)) {
+    return false;
+  }
+
+  let changed = false;
+  for (const key of resolveLocalMainSessionStoreKeys(config)) {
+    if (!isPlainObject(store[key])) {
+      continue;
+    }
+
+    store[key] = {
+      ...store[key],
+      providerOverride: providerId,
+      model: normalizedModelId,
+      modelOverride: normalizedModelId,
+      updatedAt: Date.now(),
+    };
+    changed = true;
+  }
+
+  if (changed) {
+    writeJsonFile(LOCAL_OPENCLAW_SESSION_STORE_PATH, store);
+  }
+
+  return changed;
 }
 
 function ensureLocalOpenClawAuthState(payload) {
@@ -3530,6 +3945,7 @@ function ensureLocalOpenClawAuthState(payload) {
 
   ensureDirectory(LOCAL_OPENCLAW_AGENT_DIR);
   ensureDirectory(workspaceDir);
+  const workspaceEnsureResult = ensureManagedLocalOpenClawWorkspaceState({ workspaceDir });
 
   const authStore = isPlainObject(existingAuthStoreRaw) ? { ...existingAuthStoreRaw } : {};
   authStore.version = 1;
@@ -3642,7 +4058,7 @@ function ensureLocalOpenClawAuthState(payload) {
         item.cost.cacheWrite = Number(item.cost.cacheWrite || 0);
         item.contextWindow = Math.max(Number(item.contextWindow || 0), 262144);
         item.maxTokens = Math.max(Number(item.maxTokens || 0), 8192);
-        item.reasoning = false;
+        item.reasoning = resolveManagedModelReasoning(item.id || modelId);
         applyManagedModelCompat(item, item.id || modelId);
       }
     }
@@ -3682,7 +4098,8 @@ function ensureLocalOpenClawAuthState(payload) {
   }
   config.agents.defaults.models = existingDefaultModels;
   config.agents.defaults.workspace = workspaceDir;
-  delete config.agents.defaults.skipBootstrap;
+  applyManagedMemorySearchConfig(config, { baseUrl, apiKey });
+  config.agents.defaults.skipBootstrap = true;
   delete config.agents.defaults.bootstrapMaxChars;
   delete config.agents.defaults.bootstrapTotalMaxChars;
   const existingAgentList = Array.isArray(config.agents.list) ? [...config.agents.list] : [];
@@ -3744,8 +4161,22 @@ function ensureLocalOpenClawAuthState(payload) {
   if (typeof config.tools.profile !== "string" || !config.tools.profile.trim()) {
     config.tools.profile = "coding";
   }
+  config.tools.exec = isPlainObject(config.tools.exec) ? { ...config.tools.exec } : {};
+  config.tools.exec.host = "gateway";
+  config.tools.exec.security = "full";
+  config.tools.exec.ask = "off";
+  config.agents.defaults.sandbox = isPlainObject(config.agents.defaults.sandbox)
+    ? { ...config.agents.defaults.sandbox }
+    : {};
+  config.agents.defaults.sandbox.mode = "off";
 
   writeJsonFile(LOCAL_OPENCLAW_CONFIG_PATH, config);
+  alignManagedMainSessionStoreModel(config, providerId, modelId);
+  if (!workspaceEnsureResult.ok && workspaceEnsureResult.error) {
+    appendLocalBootstrapLog(`managed workspace prompt ensure failed (${workspaceEnsureResult.error})`);
+  } else if (workspaceEnsureResult.changed) {
+    appendLocalBootstrapLog("managed workspace prompt updated");
+  }
 
   const nextWorkspaceId = workspaceId || existingBinding?.workspaceId || "";
   const nextDeploymentId = deploymentId || existingBinding?.deploymentId || "";
@@ -3790,6 +4221,8 @@ function ensureLocalOpenClawAuthState(payload) {
     ok: true,
     createdFreshState: !hadConfigFile || !hadAuthStoreFile,
     replacedExistingKey: hadConfigFile || hadAuthStoreFile,
+    modelId,
+    allowedModelIds,
   };
 }
 
@@ -3961,7 +4394,24 @@ async function syncLocalOpenClawAuthPayload(payload) {
     };
   }
 
-  const effectivePayload = preparedPayload.payload;
+  const modelSelection = await resolveHealthyManagedModelPayload(preparedPayload.payload);
+  if (!modelSelection.ok) {
+    return {
+      ok: false,
+      error: modelSelection.error || "当前本地模型不可用，请稍后重试。",
+      modelId: modelSelection.modelId,
+      requestedModelId: modelSelection.requestedModelId,
+      allowedModelIds: modelSelection.allowedModelIds,
+      unhealthyModelIds: modelSelection.unhealthyModelIds,
+      probeResults: modelSelection.probeResults,
+      status: await getLocalOpenClawStatus(),
+    };
+  }
+  if (modelSelection.warning) {
+    appendLocalBootstrapLog(`managed model fallback applied (${modelSelection.warning})`);
+  }
+
+  const effectivePayload = modelSelection.payload;
   const ensuredAuthState = ensureLocalOpenClawAuthState(effectivePayload);
   if (!ensuredAuthState.ok) {
     return {
@@ -4014,6 +4464,13 @@ async function syncLocalOpenClawAuthPayload(payload) {
     skippedRestart: skipRestart,
     createdFreshState: Boolean(ensuredAuthState.createdFreshState),
     replacedExistingKey: Boolean(ensuredAuthState.replacedExistingKey),
+    modelId: ensuredAuthState.modelId || modelSelection.modelId,
+    requestedModelId: modelSelection.requestedModelId,
+    allowedModelIds: ensuredAuthState.allowedModelIds || modelSelection.allowedModelIds || [],
+    unhealthyModelIds: modelSelection.unhealthyModelIds || [],
+    probeResults: modelSelection.probeResults || [],
+    modelSelectionWarning: modelSelection.warning || "",
+    effectivePayload,
     status,
     error:
       gatewayRestart && !gatewayRestart.ok
@@ -4170,8 +4627,9 @@ async function acquireCachedLocalGatewayRpcClient({
   connectTimeoutMs = 15000,
   scopes,
   omitDeviceIdentity = false,
+  disableCache = false,
 }) {
-  if (!ENABLE_LOCAL_GATEWAY_RPC_CLIENT_CACHE) {
+  if (!ENABLE_LOCAL_GATEWAY_RPC_CLIENT_CACHE || disableCache) {
     const client = await createGatewayRpcClient({
       dashboardUrl,
       connectTimeoutMs,
@@ -4408,7 +4866,7 @@ async function patchLocalOpenClawSessionModel(payload) {
       const patched = [];
       for (const key of sessionKeys) {
         try {
-          const result = await callLocalOpenClawGatewayRpc({
+          const result = await callLocalOpenClawGatewayRpcViaCli({
             dashboardUrl,
             method: "sessions.patch",
             params: {
@@ -5737,6 +6195,21 @@ const resolveCompatForModel = (value) => {
   }
   return compat;
 };
+const resolveReasoningForModel = (value) => {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized.startsWith("gpt-5") ||
+    normalized.startsWith("o1") ||
+    normalized.startsWith("o3") ||
+    normalized.startsWith("o4")
+  ) {
+    return true;
+  }
+  return false;
+};
 const collectManagedModelIds = (providers, preferredProviderId) => {
   const values = [];
   const seen = new Set();
@@ -5898,7 +6371,7 @@ if (configPath && workspaceDir) {
           model.cost.cacheWrite = Number(model.cost.cacheWrite || 0);
           model.contextWindow = Math.max(Number(model.contextWindow || 0), 262144);
           model.maxTokens = Math.max(Number(model.maxTokens || 0), 8192);
-          model.reasoning = false;
+          model.reasoning = resolveReasoningForModel(model.id || modelId);
           applyCompatForModel(model, model.id || modelId);
         }
       }
@@ -5925,6 +6398,7 @@ if (configPath && workspaceDir) {
       .filter((value) => value !== modelId)
       .map((value) => providerId + "/" + value);
     config.agents.defaults.workspace = workspaceDir;
+    applyManagedMemorySearchConfig(config, { baseUrl: targetBaseUrl, apiKey });
     delete config.agents.defaults.skipBootstrap;
     delete config.agents.defaults.bootstrapMaxChars;
     delete config.agents.defaults.bootstrapTotalMaxChars;
@@ -5984,6 +6458,16 @@ if (configPath && workspaceDir) {
     if (typeof config.tools.profile !== "string" || !config.tools.profile.trim()) {
       config.tools.profile = "coding";
     }
+    config.tools.exec = isRecord(config.tools.exec) ? config.tools.exec : {};
+    config.tools.exec.host = "gateway";
+    config.tools.exec.security = "full";
+    config.tools.exec.ask = "off";
+    config.agents = isRecord(config.agents) ? config.agents : {};
+    config.agents.defaults = isRecord(config.agents.defaults) ? config.agents.defaults : {};
+    config.agents.defaults.sandbox = isRecord(config.agents.defaults.sandbox)
+      ? config.agents.defaults.sandbox
+      : {};
+    config.agents.defaults.sandbox.mode = "off";
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
   } catch (error) {
     warn("config normalization skipped", error);
@@ -6718,6 +7202,21 @@ const resolveCompatForModel = (value) => {
   }
   return compat;
 };
+const resolveReasoningForModel = (value) => {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized.startsWith("gpt-5") ||
+    normalized.startsWith("o1") ||
+    normalized.startsWith("o3") ||
+    normalized.startsWith("o4")
+  ) {
+    return true;
+  }
+  return false;
+};
 const collectManagedModelIds = (providers, preferredProviderId) => {
   const values = [];
   const seen = new Set();
@@ -6879,7 +7378,7 @@ if (configPath && workspaceDir) {
           model.cost.cacheWrite = Number(model.cost.cacheWrite || 0);
           model.contextWindow = Math.max(Number(model.contextWindow || 0), 262144);
           model.maxTokens = Math.max(Number(model.maxTokens || 0), 8192);
-          model.reasoning = false;
+          model.reasoning = resolveReasoningForModel(model.id || modelId);
           applyCompatForModel(model, model.id || modelId);
         }
       }
@@ -6906,6 +7405,7 @@ if (configPath && workspaceDir) {
       .filter((value) => value !== modelId)
       .map((value) => providerId + "/" + value);
     config.agents.defaults.workspace = workspaceDir;
+    applyManagedMemorySearchConfig(config, { baseUrl: targetBaseUrl, apiKey });
     delete config.agents.defaults.skipBootstrap;
     delete config.agents.defaults.bootstrapMaxChars;
     delete config.agents.defaults.bootstrapTotalMaxChars;
@@ -6965,6 +7465,16 @@ if (configPath && workspaceDir) {
     if (typeof config.tools.profile !== "string" || !config.tools.profile.trim()) {
       config.tools.profile = "coding";
     }
+    config.tools.exec = isRecord(config.tools.exec) ? config.tools.exec : {};
+    config.tools.exec.host = "gateway";
+    config.tools.exec.security = "full";
+    config.tools.exec.ask = "off";
+    config.agents = isRecord(config.agents) ? config.agents : {};
+    config.agents.defaults = isRecord(config.agents.defaults) ? config.agents.defaults : {};
+    config.agents.defaults.sandbox = isRecord(config.agents.defaults.sandbox)
+      ? config.agents.defaults.sandbox
+      : {};
+    config.agents.defaults.sandbox.mode = "off";
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\\n");
   } catch (error) {
     warn("config normalization skipped", error);
@@ -7316,6 +7826,16 @@ function checkLocalPortOpen(port) {
 async function getLocalOpenClawStatus() {
   const runtime = await detectLocalOpenClawRuntime();
   sanitizeLegacyLocalCommerceConfigMarker();
+  if (
+    runtime.installed ||
+    fs.existsSync(LOCAL_OPENCLAW_WORKSPACE_DIR) ||
+    fs.existsSync(LOCAL_OPENCLAW_CONFIG_PATH)
+  ) {
+    const workspaceEnsureResult = ensureManagedLocalOpenClawWorkspaceState();
+    if (!workspaceEnsureResult.ok && workspaceEnsureResult.error) {
+      appendLocalBootstrapLog(`managed workspace prompt ensure failed (${workspaceEnsureResult.error})`);
+    }
+  }
   const [dashboardPortOpen, browserControlPortOpen] = await Promise.all([
     checkLocalPortOpen(LOCAL_DEFAULT_DASHBOARD_PORT),
     checkLocalPortOpen(LOCAL_DEFAULT_BROWSER_CONTROL_PORT),
@@ -7465,6 +7985,49 @@ function writeJsonFileIfChanged(filePath, value) {
   return writeTextFileIfChanged(filePath, serializeJsonWithTrailingNewline(value));
 }
 
+function ensureManagedLocalOpenClawWorkspaceState(options = {}) {
+  const workspaceDir =
+    typeof options?.workspaceDir === "string" && options.workspaceDir.trim()
+      ? options.workspaceDir.trim()
+      : LOCAL_OPENCLAW_WORKSPACE_DIR;
+  if (!workspaceDir) {
+    return { ok: false, changed: false, reason: "missing-workspace-dir" };
+  }
+
+  try {
+    ensureDirectory(workspaceDir);
+    let changed = false;
+
+    const agentsPath = path.join(workspaceDir, "AGENTS.md");
+    const currentAgents = readTextFileIfExists(agentsPath);
+    if (shouldReplaceManagedLocalAgents(currentAgents)) {
+      changed = writeTextFileIfChanged(agentsPath, `${LOCAL_MANAGED_MAIN_AGENTS_TEMPLATE}\n`) || changed;
+    }
+
+    const bootstrapPath = path.join(workspaceDir, "BOOTSTRAP.md");
+    const currentBootstrap = readTextFileIfExists(bootstrapPath);
+    if (currentBootstrap && shouldDeleteManagedBootstrap(currentBootstrap)) {
+      fs.unlinkSync(bootstrapPath);
+      changed = true;
+    }
+
+    for (const [relativePath, content] of Object.entries(LOCAL_MANAGED_WORKSPACE_FILES)) {
+      const filePath = path.join(workspaceDir, relativePath);
+      if (!readTextFileIfExists(filePath)) {
+        changed = writeTextFileIfChanged(filePath, content) || changed;
+      }
+    }
+
+    return { ok: true, changed };
+  } catch (error) {
+    return {
+      ok: false,
+      changed: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function isProcessAlive(pid) {
   const normalizedPid = Number(pid);
   if (!Number.isInteger(normalizedPid) || normalizedPid <= 0) {
@@ -7548,6 +8111,22 @@ function resolveGatewayAgentIdFromParams(params) {
     typeof params?.sessionKey === "string" ? params.sessionKey.trim().toLowerCase() : "";
   const parsed = sessionKey.match(/^agent:([a-z0-9][a-z0-9_-]{0,63}):/i);
   return parsed?.[1] ? parsed[1].toLowerCase() : "main";
+}
+
+function resolveGatewayResponsesSessionKey(params) {
+  const rawSessionKey =
+    typeof params?.sessionKey === "string" && params.sessionKey.trim()
+      ? params.sessionKey.trim()
+      : "main";
+  const lowered = rawSessionKey.toLowerCase();
+  if (!lowered) {
+    return "agent:main:main";
+  }
+  if (lowered === "global" || lowered === "unknown" || lowered.startsWith("agent:")) {
+    return lowered;
+  }
+
+  return `agent:${resolveGatewayAgentIdFromParams(params)}:${lowered}`;
 }
 
 function listCommerceRuntimeAgents() {
@@ -7707,7 +8286,7 @@ function resolveLocalManagedProviderContext(runtimeStatus = null) {
     extractConcreteManagedModelIdFromSessionStore(config) ||
     extractConcreteManagedModelIdFromConfig(config, providerId) ||
     normalizeConcreteManagedModelId(configModels[0]) ||
-    "gpt-5.2";
+    "qwen35-plus";
   const requiredModelIds = resolveCommerceRequiredModelIds(configModels);
   const allowedModelIds = normalizeManagedModelIdList(requiredModelIds, {
     primaryModelId: inferredDefaultModelId,
@@ -7892,11 +8471,36 @@ function ensureCommerceAgentAuthStores(agentDefinitions, context) {
 function ensureLocalCommerceManagedFiles(agentDefinitions) {
   let changed = false;
   ensureDirectory(LOCAL_COMMERCE_RUNS_DIR);
+  const alwaysManagedScaffoldFiles = new Set([
+    "SYSTEM.md",
+    "PERSONA.md",
+    "IDENTITY.md",
+    "USER.md",
+    "SESSION_STARTUP.md",
+  ]);
 
   for (const agent of agentDefinitions) {
     const managedFiles = buildAgentManagedFiles(agent);
     for (const [relativePath, fileContent] of Object.entries(managedFiles)) {
       const absolutePath = path.join(agent.workspace, relativePath);
+      const normalizedContent =
+        typeof fileContent === "string" && fileContent.endsWith("\n")
+          ? fileContent
+          : `${String(fileContent ?? "")}\n`;
+      if (writeTextFileIfChanged(absolutePath, normalizedContent)) {
+        changed = true;
+      }
+    }
+
+    const scaffoldFiles = buildAgentScaffoldFiles(agent);
+    for (const [relativePath, fileContent] of Object.entries(scaffoldFiles)) {
+      const absolutePath = path.join(agent.workspace, relativePath);
+      if (
+        !alwaysManagedScaffoldFiles.has(relativePath) &&
+        readTextFileIfExists(absolutePath).trim()
+      ) {
+        continue;
+      }
       const normalizedContent =
         typeof fileContent === "string" && fileContent.endsWith("\n")
           ? fileContent
@@ -8033,11 +8637,10 @@ function ensureLocalCommerceConfig(context, agentDefinitions) {
 }
 
 function ensureLocalCommerceManifest(context, agentDefinitions) {
-  const manifest = {
+  const nextComparableManifest = {
     version: COMMERCE_TEAM_VERSION,
     providerId: context?.providerId || "",
     defaultModelId: context?.defaultModelId || "",
-    generatedAt: new Date().toISOString(),
     agents: agentDefinitions.map((agent) => ({
       id: agent.id,
       label: agent.label,
@@ -8047,8 +8650,43 @@ function ensureLocalCommerceManifest(context, agentDefinitions) {
       availability: agent.availability,
     })),
   };
+  const existingManifest = readJsonFile(LOCAL_COMMERCE_MANIFEST_PATH);
+  const existingComparableManifest = isPlainObject(existingManifest)
+    ? {
+        version:
+          typeof existingManifest.version === "string" ? existingManifest.version : "",
+        providerId:
+          typeof existingManifest.providerId === "string" ? existingManifest.providerId : "",
+        defaultModelId:
+          typeof existingManifest.defaultModelId === "string"
+            ? existingManifest.defaultModelId
+            : "",
+        agents: Array.isArray(existingManifest.agents)
+          ? existingManifest.agents.map((agent) => ({
+              id: typeof agent?.id === "string" ? agent.id : "",
+              label: typeof agent?.label === "string" ? agent.label : "",
+              workspace: typeof agent?.workspace === "string" ? agent.workspace : "",
+              agentDir: typeof agent?.agentDir === "string" ? agent.agentDir : "",
+              defaultModelId:
+                typeof agent?.defaultModelId === "string" ? agent.defaultModelId : "",
+              availability:
+                typeof agent?.availability === "string" ? agent.availability : "",
+            }))
+          : [],
+      }
+    : null;
 
-  return writeJsonFileIfChanged(LOCAL_COMMERCE_MANIFEST_PATH, manifest);
+  if (
+    existingComparableManifest &&
+    JSON.stringify(existingComparableManifest) === JSON.stringify(nextComparableManifest)
+  ) {
+    return false;
+  }
+
+  return writeJsonFileIfChanged(LOCAL_COMMERCE_MANIFEST_PATH, {
+    ...nextComparableManifest,
+    generatedAt: new Date().toISOString(),
+  });
 }
 
 async function ensureLocalCommerceTeam() {
@@ -8301,6 +8939,121 @@ function findLatestAssistantMessage(messages) {
   return null;
 }
 
+function findLatestAssistantMessageInSessionFile(sessionFilePath) {
+  const raw = readTextFileIfExists(sessionFilePath);
+  if (!raw) {
+    return null;
+  }
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const record = JSON.parse(lines[index]);
+      if (
+        isPlainObject(record) &&
+        record.type === "message" &&
+        isPlainObject(record.message) &&
+        typeof record.message.role === "string" &&
+        record.message.role.trim().toLowerCase() === "assistant"
+      ) {
+        return record.message;
+      }
+    } catch {
+      // ignore malformed history lines
+    }
+  }
+
+  return null;
+}
+
+function resolveSessionFilePathFromEntry(entry) {
+  if (!isPlainObject(entry)) {
+    return "";
+  }
+
+  if (typeof entry.sessionFile === "string" && entry.sessionFile.trim()) {
+    return entry.sessionFile.trim();
+  }
+
+  const sessionId =
+    typeof entry.sessionId === "string" && entry.sessionId.trim() ? entry.sessionId.trim() : "";
+  const sessionKey =
+    typeof entry.key === "string" && entry.key.trim() ? entry.key.trim() : "";
+  if (!sessionId || !sessionKey) {
+    return "";
+  }
+
+  const agentIdMatch = sessionKey.match(/^agent:([a-z0-9][a-z0-9_-]{0,63}):/i);
+  const agentId = agentIdMatch?.[1] ? agentIdMatch[1].toLowerCase() : "";
+  if (!agentId) {
+    return "";
+  }
+
+  return path.join(LOCAL_OPENCLAW_STATE_DIR, "agents", agentId, "sessions", `${sessionId}.jsonl`);
+}
+
+function normalizeGatewaySessionStatusEntry(entry, latestAssistantMessage) {
+  if (!isPlainObject(entry)) {
+    return entry;
+  }
+
+  const updatedAtMs =
+    Number.isFinite(entry.updatedAt) && entry.updatedAt > 0
+      ? entry.updatedAt
+      : Date.parse(entry.updatedAt || "") || 0;
+  const staleRunningWithoutFile =
+    entry.status === "running" &&
+    !latestAssistantMessage &&
+    (() => {
+      const sessionFilePath = resolveSessionFilePathFromEntry(entry);
+      if (!sessionFilePath || fs.existsSync(sessionFilePath)) {
+        return false;
+      }
+      return updatedAtMs > 0 && Date.now() - updatedAtMs > 60_000;
+    })();
+
+  const stopReason =
+    typeof latestAssistantMessage?.stopReason === "string"
+      ? latestAssistantMessage.stopReason.trim().toLowerCase()
+      : "";
+  const errorMessage =
+    typeof latestAssistantMessage?.errorMessage === "string"
+      ? latestAssistantMessage.errorMessage.trim()
+      : "";
+
+  if (stopReason === "aborted" || errorMessage) {
+    return {
+      ...entry,
+      status: "aborted",
+      abortedLastRun: true,
+    };
+  }
+
+  if (latestAssistantMessage && entry.status === "running") {
+    return {
+      ...entry,
+      status: "done",
+    };
+  }
+
+  if (staleRunningWithoutFile) {
+    return {
+      ...entry,
+      status: "failed",
+      errorMessage:
+        typeof entry.errorMessage === "string" && entry.errorMessage.trim()
+          ? entry.errorMessage.trim()
+          : "session state became stale after an interrupted local run",
+    };
+  }
+
+  return entry;
+}
+
 function buildCommerceRunArtifacts(outputDir) {
   return [
     {
@@ -8417,6 +9170,473 @@ function listCommerceRuns() {
     });
 }
 
+function parseJsonLikeBlock(text) {
+  const raw = typeof text === "string" ? text.trim() : "";
+  if (!raw) {
+    return null;
+  }
+  const fencedMatch = raw.match(/```json\s*([\s\S]*?)```/i) || raw.match(/```\s*([\s\S]*?)```/i);
+  const candidate = fencedMatch?.[1]?.trim() || raw;
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(candidate.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function inferSupportDecisionHeuristically(thread) {
+  const latestMessage = typeof thread?.latestMessage === "string" ? thread.latestMessage : "";
+  const text = latestMessage.trim().toLowerCase();
+  const defaultReply =
+    "我先帮你核对一下当前信息，再给你准确回复。如果涉及退款、改地址或赔付，我会先转给人工审核。";
+
+  if (/物流|快递|发到哪|到哪|没到|运输|签收|单号/.test(text)) {
+    return {
+      intent: "logistics",
+      riskLevel: "low",
+      confidence: 0.72,
+      nextAction: "auto-reply",
+      replyDraft:
+        "我先帮你查了一下当前物流节点，稍后把最新进度同步给你。如果包裹已经超过正常时效，我会继续帮你跟进。",
+      humanReason: "",
+      requestedActions: [],
+      productFacts: [],
+      policyFacts: ["物流查询属于低风险场景，可以先自动回复当前进度。"],
+    };
+  }
+
+  if (/退款|退货|赔偿|赔付|漏水|投诉|差评|维权/.test(text)) {
+    return {
+      intent: "refund-or-complaint",
+      riskLevel: "high",
+      confidence: 0.8,
+      nextAction: "human-review",
+      replyDraft:
+        "非常抱歉给你带来不便。我先帮你记录当前问题，并马上转给人工客服核实处理方案，避免给你错误承诺。",
+      humanReason: "涉及退款、赔付、投诉或商品故障争议，默认转人工审核。",
+      requestedActions: [
+        {
+          type: "handoff",
+          reason: "高风险售后场景需要人工审批",
+          payload: {},
+        },
+      ],
+      productFacts: [],
+      policyFacts: ["退款同意、赔付承诺和投诉升级默认不能自动执行。"],
+    };
+  }
+
+  if (/改地址|修改地址|收货地址/.test(text)) {
+    return {
+      intent: "address-change",
+      riskLevel: "high",
+      confidence: 0.84,
+      nextAction: "human-review",
+      replyDraft:
+        "我先帮你记录修改地址的需求，这类操作需要人工核对订单发货状态后才能处理，我会先转人工帮你确认。",
+      humanReason: "改地址默认高风险，需要人工核对发货状态。",
+      requestedActions: [
+        {
+          type: "handoff",
+          reason: "改地址请求需要人工核验",
+          payload: {},
+        },
+      ],
+      productFacts: [],
+      policyFacts: ["改地址默认不能自动执行。"],
+    };
+  }
+
+  return {
+    intent: "faq-or-context-needed",
+    riskLevel: "medium",
+    confidence: 0.45,
+    nextAction: "needs-context",
+    replyDraft: defaultReply,
+    humanReason: "当前信息不足，建议补齐订单、商品或平台上下文。",
+    requestedActions: [],
+    productFacts: [],
+    policyFacts: [],
+  };
+}
+
+function normalizeSupportDecisionPayload(value, fallbackThread = null) {
+  const source = isPlainObject(value) ? value : inferSupportDecisionHeuristically(fallbackThread);
+  const normalizedRisk =
+    typeof source.riskLevel === "string" ? source.riskLevel.trim().toLowerCase() : "medium";
+  const riskLevel =
+    normalizedRisk === "low" || normalizedRisk === "medium" || normalizedRisk === "high"
+      ? normalizedRisk
+      : "medium";
+  const normalizedAction =
+    typeof source.nextAction === "string" ? source.nextAction.trim().toLowerCase() : "";
+  const nextAction =
+    normalizedAction === "auto-reply" ||
+    normalizedAction === "needs-context" ||
+    normalizedAction === "human-review" ||
+    normalizedAction === "blocked"
+      ? normalizedAction
+      : riskLevel === "low"
+        ? "auto-reply"
+        : "human-review";
+  const requestedActions = Array.isArray(source.requestedActions)
+    ? source.requestedActions
+        .map((entry) => {
+          if (!isPlainObject(entry)) {
+            return null;
+          }
+          const type = typeof entry.type === "string" ? entry.type.trim() : "";
+          if (!type) {
+            return null;
+          }
+          return {
+            type,
+            reason: typeof entry.reason === "string" ? entry.reason.trim() : "",
+            payload: isPlainObject(entry.payload) ? entry.payload : {},
+          };
+        })
+        .filter(Boolean)
+    : [];
+  return {
+    intent: typeof source.intent === "string" && source.intent.trim() ? source.intent.trim() : "unknown",
+    riskLevel,
+    confidence:
+      Number.isFinite(Number(source.confidence)) && Number(source.confidence) >= 0
+        ? Math.min(1, Math.max(0, Number(source.confidence)))
+        : 0.5,
+    nextAction,
+    replyDraft: typeof source.replyDraft === "string" ? source.replyDraft.trim() : "",
+    humanReason: typeof source.humanReason === "string" ? source.humanReason.trim() : "",
+    requestedActions,
+    productFacts: normalizeStringList(source.productFacts),
+    policyFacts: normalizeStringList(source.policyFacts),
+  };
+}
+
+function buildSupportDecisionPrompt(thread, rules) {
+  const history = Array.isArray(thread?.history)
+    ? thread.history
+        .map((entry) => {
+          const role = typeof entry?.role === "string" ? entry.role.trim() : "buyer";
+          const text = typeof entry?.text === "string" ? entry.text.trim() : "";
+          return text ? `- ${role}: ${text}` : "";
+        })
+        .filter(Boolean)
+        .join("\n")
+    : "暂无历史";
+  const context = isPlainObject(thread?.context) ? thread.context : {};
+  const constraints = [
+    "低风险可自动回复：物流查询、基础售前 FAQ、基础售后说明。",
+    "高风险必须人工审核：退款同意、改地址、赔付承诺、重发货、投诉升级。",
+    rules?.requireHumanForHighRisk === false
+      ? "当前桌面设置允许高风险继续给出建议，但仍不要自动执行动作。"
+      : "当前桌面设置要求高风险一律转人工审核。",
+    "请输出 JSON，不要输出多余解释。",
+  ].join("\n");
+  return [
+    "你现在是电商客服自动化里的 customer-service-dept。",
+    "请对下面这条真实客服会话做结构化分诊，返回 JSON：",
+    "",
+    "{",
+    '  "intent": "pre-sales|logistics|refund|complaint|address-change|product-issue|platform-rule|unknown",',
+    '  "riskLevel": "low|medium|high",',
+    '  "confidence": 0.0,',
+    '  "nextAction": "auto-reply|needs-context|human-review|blocked",',
+    '  "replyDraft": "给买家的回复草稿",',
+    '  "humanReason": "如果需要人工，这里写原因",',
+    '  "requestedActions": [{"type":"handoff|refund|address-change|compensation|reship","reason":"...","payload":{}}],',
+    '  "productFacts": ["..."],',
+    '  "policyFacts": ["..."]',
+    "}",
+    "",
+    "## 自动化约束",
+    constraints,
+    "",
+    `## 平台\n${thread?.platform || "unknown"}`,
+    `## 线程 ID\n${thread?.threadId || "--"}`,
+    `## 买家\n${thread?.buyerName || thread?.buyerId || "--"}`,
+    `## 最新消息\n${thread?.latestMessage || "暂无"}`,
+    "",
+    "## 历史消息",
+    history,
+    "",
+    "## 订单引用",
+    Array.isArray(thread?.orderRefs) && thread.orderRefs.length > 0
+      ? thread.orderRefs.map((entry) => `- ${entry}`).join("\n")
+      : "- 无",
+    "",
+    "## 上下文",
+    JSON.stringify(context, null, 2),
+    "",
+    "只返回 JSON。",
+  ].join("\n");
+}
+
+async function runSupportTriage(payload = {}) {
+  const platformId =
+    typeof payload?.platform === "string" ? payload.platform.trim().toLowerCase() : "";
+  const threadId = typeof payload?.threadId === "string" ? payload.threadId.trim() : "";
+  if (!platformId || !threadId) {
+    return {
+      ok: false,
+      error: "missing support triage params",
+    };
+  }
+
+  const rulesResult = getSupportAutomationRules();
+  const rules = rulesResult?.rules || DEFAULT_SUPPORT_RULES;
+  const threadResult = await getSupportThread({ platform: platformId, threadId });
+  if (!threadResult?.ok || !threadResult.thread) {
+    return {
+      ok: false,
+      error: threadResult?.error || "support thread not found",
+    };
+  }
+
+  const ensured = await ensureLocalCommerceTeam();
+  if (!ensured.ok) {
+    return {
+      ok: false,
+      error: ensured.error || "本地电商团队还没有就绪，无法运行客服分诊。",
+    };
+  }
+
+  const runtimeStatus = await getLocalOpenClawStatus();
+  if (!runtimeStatus?.ready || !runtimeStatus?.dashboardUrl) {
+    return {
+      ok: false,
+      error: "本地 OpenClaw 还没有完全就绪，暂时无法运行客服分诊。",
+    };
+  }
+
+  const prompt = buildSupportDecisionPrompt(threadResult.thread, rules);
+  const triageSessionKey = buildCommerceAgentSessionKey(
+    "customer-service-dept",
+    `support-triage-${normalizeCommerceIdentifier(platformId, "platform")}-${normalizeCommerceIdentifier(threadId, "thread")}`,
+  );
+  const taskResult = await runLocalGatewayChatTask({
+    dashboardUrl: runtimeStatus.dashboardUrl,
+    sessionKey: triageSessionKey,
+    agentId: "customer-service-dept",
+    message: prompt,
+    timeoutMs: 180000,
+  });
+  if (!taskResult?.ok) {
+    return {
+      ok: false,
+      error: taskResult?.error || "support triage failed",
+      thread: threadResult.thread,
+    };
+  }
+
+  const messageText =
+    extractPlainTextFromGatewayMessage(taskResult?.payload?.message) ||
+    extractTextFromOpenResponse(taskResult?.payload?.response) ||
+    "";
+  const parsedDecision = parseJsonLikeBlock(messageText);
+  const normalizedDecision = normalizeSupportDecisionPayload(parsedDecision, threadResult.thread);
+  const persisted = saveSupportDecision({
+    platform: platformId,
+    threadId,
+    decision: normalizedDecision,
+  });
+  if (!persisted?.ok) {
+    return {
+      ok: false,
+      error: persisted?.error || "failed to persist support decision",
+      thread: threadResult.thread,
+    };
+  }
+
+  return {
+    ok: true,
+    thread: persisted.thread,
+    decision: persisted.decision,
+    rawText: messageText,
+    sessionKey: triageSessionKey,
+  };
+}
+
+async function approveSupportReplyAction(payload = {}) {
+  const platformId =
+    typeof payload?.platform === "string" ? payload.platform.trim().toLowerCase() : "";
+  const threadId = typeof payload?.threadId === "string" ? payload.threadId.trim() : "";
+  if (!platformId || !threadId) {
+    return {
+      ok: false,
+      error: "missing support reply params",
+    };
+  }
+  const threadResult = await getSupportThread({ platform: platformId, threadId });
+  const replyMessage =
+    typeof payload?.message === "string" && payload.message.trim()
+      ? payload.message.trim()
+      : typeof threadResult?.thread?.decision?.replyDraft === "string"
+        ? threadResult.thread.decision.replyDraft.trim()
+        : "";
+  if (!replyMessage) {
+    return {
+      ok: false,
+      error: "当前线程还没有可发送的回复草稿。",
+    };
+  }
+  return sendSupportReply({
+    platform: platformId,
+    threadId,
+    message: replyMessage,
+    automated: payload?.automated === true,
+  });
+}
+
+function approveSupportActionRequest(payload = {}) {
+  const platformId =
+    typeof payload?.platform === "string" ? payload.platform.trim().toLowerCase() : "";
+  const threadId = typeof payload?.threadId === "string" ? payload.threadId.trim() : "";
+  const type =
+    typeof payload?.type === "string" && payload.type.trim()
+      ? payload.type.trim()
+      : typeof payload?.actionType === "string" && payload.actionType.trim()
+        ? payload.actionType.trim()
+        : "handoff";
+  return requestSupportAction({
+    platform: platformId,
+    threadId,
+    type,
+    reason:
+      typeof payload?.reason === "string" && payload.reason.trim()
+        ? payload.reason.trim()
+        : "由人工继续处理该会话",
+    payload: isPlainObject(payload?.payload) ? payload.payload : {},
+  });
+}
+
+async function processSupportAutomationPlatform(platform) {
+  const platformId = typeof platform?.id === "string" ? platform.id.trim().toLowerCase() : "";
+  if (!platformId || supportAutomationLoopState.inFlight.has(platformId)) {
+    return;
+  }
+  supportAutomationLoopState.inFlight.add(platformId);
+  try {
+    const rulesResult = getSupportAutomationRules();
+    const rules = rulesResult?.rules || DEFAULT_SUPPORT_RULES;
+    if (!rules.enabled) {
+      return;
+    }
+    const pullResult = await pullSupportInbox({ platform: platformId });
+    const threads = (Array.isArray(pullResult?.items) ? pullResult.items : [])
+      .slice()
+      .sort((left, right) => {
+        const leftPopup =
+          typeof left?.attentionState === "string" && left.attentionState.trim().toLowerCase() === "popup"
+            ? 1
+            : 0;
+        const rightPopup =
+          typeof right?.attentionState === "string" && right.attentionState.trim().toLowerCase() === "popup"
+            ? 1
+            : 0;
+        if (leftPopup !== rightPopup) {
+          return rightPopup - leftPopup;
+        }
+        const leftStatus = typeof left?.status === "string" ? left.status.trim().toLowerCase() : "";
+        const rightStatus = typeof right?.status === "string" ? right.status.trim().toLowerCase() : "";
+        const leftOpen = leftStatus === "open" || leftStatus === "triaged" ? 1 : 0;
+        const rightOpen = rightStatus === "open" || rightStatus === "triaged" ? 1 : 0;
+        if (leftOpen !== rightOpen) {
+          return rightOpen - leftOpen;
+        }
+        const rightAlertAt = Date.parse(right?.lastAlertAt || 0) || 0;
+        const leftAlertAt = Date.parse(left?.lastAlertAt || 0) || 0;
+        if (leftAlertAt !== rightAlertAt) {
+          return rightAlertAt - leftAlertAt;
+        }
+        return (Date.parse(right?.updatedAt || right?.createdAt || 0) || 0) - (Date.parse(left?.updatedAt || left?.createdAt || 0) || 0);
+      });
+
+    // 一次只处理一个最高优先级线程，生成/发送期间不切去别的会话。
+    for (const thread of threads) {
+      const status = typeof thread?.status === "string" ? thread.status.trim().toLowerCase() : "";
+      if (
+        !thread?.threadId ||
+        status === "replied" ||
+        status === "closed" ||
+        status === "awaiting-human"
+      ) {
+        continue;
+      }
+
+      const triageResult = await runSupportTriage({
+        platform: platformId,
+        threadId: thread.threadId,
+      });
+      if (!triageResult?.ok || !triageResult.decision) {
+        break;
+      }
+
+      const decision = triageResult.decision;
+      if (
+        rules.autoRunTriage &&
+        rules.autoReplyLowRisk &&
+        decision.riskLevel === "low" &&
+        decision.nextAction === "auto-reply" &&
+        decision.replyDraft
+      ) {
+        await approveSupportReplyAction({
+          platform: platformId,
+          threadId: thread.threadId,
+          automated: true,
+          message: decision.replyDraft,
+        });
+      }
+      break;
+    }
+  } finally {
+    supportAutomationLoopState.inFlight.delete(platformId);
+  }
+}
+
+function stopSupportAutomationLoops() {
+  for (const timer of supportAutomationLoopState.timers.values()) {
+    clearInterval(timer);
+  }
+  supportAutomationLoopState.timers.clear();
+  supportAutomationLoopState.inFlight.clear();
+}
+
+function refreshSupportAutomationLoops() {
+  stopSupportAutomationLoops();
+  const rulesResult = getSupportAutomationRules();
+  const rules = rulesResult?.rules || DEFAULT_SUPPORT_RULES;
+  if (!rules.enabled) {
+    return;
+  }
+  const platformList = listSupportPlatforms();
+  const items = Array.isArray(platformList?.items) ? platformList.items : [];
+  for (const platform of items) {
+    const isSupported =
+      platform?.automationStatus !== "analysis-only" &&
+      platform?.settings?.automationEnabled === true &&
+      platform?.status !== "disconnected";
+    if (!isSupported) {
+      continue;
+    }
+    const intervalMs = Number.isInteger(rules.pollIntervalMs) ? rules.pollIntervalMs : DEFAULT_SUPPORT_RULES.pollIntervalMs;
+    const timer = setInterval(() => {
+      void processSupportAutomationPlatform(platform);
+    }, intervalMs);
+    supportAutomationLoopState.timers.set(platform.id, timer);
+    void processSupportAutomationPlatform(platform);
+  }
+}
+
 async function runLocalGatewayChatTask(params) {
   const dashboardUrl =
     typeof params?.dashboardUrl === "string" && params.dashboardUrl.trim()
@@ -8441,105 +9661,247 @@ async function runLocalGatewayChatTask(params) {
     };
   }
 
-  const handle = await acquireCachedLocalGatewayRpcClient({
-    dashboardUrl,
-  });
-  const { client } = handle;
-  const runId = createGatewayRequestId();
-  let timedOut = false;
-
-  try {
-    let unsubscribe = () => {};
-    let timer = null;
-    const terminalPayloadPromise = new Promise((resolve, reject) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        unsubscribe();
-        reject(new Error("workflow run timeout"));
-      }, timeoutMs);
-
-      unsubscribe = client.onChatEvent((payload) => {
-        const eventPayload = isPlainObject(payload) ? payload : null;
-        if (!eventPayload) {
-          return;
-        }
-        if (
-          typeof eventPayload.sessionKey === "string" &&
-          eventPayload.sessionKey.trim() &&
-          !sessionKeysLikelyMatch(sessionKey, eventPayload.sessionKey)
-        ) {
-          return;
-        }
-        if (
-          typeof eventPayload.runId === "string" &&
-          eventPayload.runId.trim() &&
-          eventPayload.runId.trim() !== runId
-        ) {
-          return;
-        }
-        if (eventPayload.state === "delta") {
-          return;
-        }
-        clearTimeout(timer);
-        unsubscribe();
-        resolve(eventPayload);
-      });
+  const attemptResponsesRequest = async () => {
+    const agentId = resolveGatewayAgentIdFromParams(params);
+    const responsesSessionKey = resolveGatewayResponsesSessionKey({
+      ...params,
+      sessionKey,
     });
+    const { token, responsesUrl } = buildGatewayConnectionFromDashboardUrl(dashboardUrl);
+    const runId = createGatewayRequestId();
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => {
+      abortController.abort(new Error("workflow run timeout"));
+    }, timeoutMs);
 
-    try {
-      await client.request("chat.send", {
-        sessionKey,
-        message,
-        deliver: false,
-        idempotencyKey: runId,
-      });
-    } catch (error) {
-      clearTimeout(timer);
-      unsubscribe();
-      throw error;
-    }
-
-    const payload = await terminalPayloadPromise;
-    if (payload?.state === "final") {
-      return {
-        ok: true,
-        payload,
-        runId,
-      };
-    }
-    return {
-      ok: false,
-      payload,
-      runId,
-      error:
-        typeof payload?.errorMessage === "string" && payload.errorMessage.trim()
-          ? payload.errorMessage.trim()
-          : payload?.state === "aborted"
-            ? "workflow aborted"
-            : "workflow failed",
-    };
-  } catch (error) {
-    if (timedOut) {
+    const recoverFinalMessageFromHistory = async (accumulatedText = "") => {
       try {
-        await abortGatewayChat({
+        const historyResult = await fetchGatewayChatHistory({
           dashboardUrl,
           sessionKey,
-          runId,
+          limit: 200,
         });
+        if (!historyResult?.ok) {
+          return null;
+        }
+        return (
+          findRecoverableAssistantMessageInHistory(historyResult.messages, {
+            promptText: message,
+            accumulatedText,
+          }) || null
+        );
       } catch {
-        // ignore abort cleanup failure
+        return null;
       }
-    }
-    handle.invalidate();
-    return {
-      ok: false,
-      payload: null,
-      runId,
-      error: error instanceof Error ? error.message : "workflow run failed",
     };
-  } finally {
-    handle.release();
+
+    try {
+      const response = await fetch(responsesUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "x-openclaw-agent-id": agentId,
+          "x-openclaw-session-key": responsesSessionKey,
+        },
+        body: JSON.stringify({
+          model: "openclaw",
+          stream: false,
+          input: buildResponsesInput(message, []),
+        }),
+        signal: abortController.signal,
+      });
+
+      const rawText = (await response.text().catch(() => "")).trim();
+      if (!response.ok) {
+        if (isResponsesEndpointUnavailable(response.status, rawText)) {
+          return { unavailable: true };
+        }
+        return {
+          ok: false,
+          error: rawText || `responses request failed with status ${String(response.status)}`,
+          payload: null,
+          runId,
+        };
+      }
+
+      let responsePayload = null;
+      try {
+        responsePayload = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        responsePayload = null;
+      }
+
+      const responseStatus =
+        responsePayload && typeof responsePayload.status === "string"
+          ? responsePayload.status
+          : "completed";
+      const finalText = extractTextFromOpenResponse(responsePayload);
+      const finalMessage =
+        buildAssistantMessageFromOpenResponse(responsePayload) ||
+        (finalText ? buildLegacyAssistantMessage(finalText) : null) ||
+        (await recoverFinalMessageFromHistory(finalText));
+
+      if (
+        responseStatus === "failed" ||
+        responseStatus === "cancelled" ||
+        responseStatus === "incomplete"
+      ) {
+        return {
+          ok: false,
+          error: `responses request ${responseStatus}`,
+          payload: {
+            state: "error",
+            message: finalMessage,
+            response: responsePayload,
+          },
+          runId,
+        };
+      }
+
+      return {
+        ok: true,
+        payload: {
+          state: "final",
+          message: finalMessage,
+          response: responsePayload,
+        },
+        runId,
+      };
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        return {
+          ok: false,
+          error: "workflow run timeout",
+          payload: null,
+          runId,
+        };
+      }
+
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "workflow chat failed",
+        payload: null,
+        runId,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  let rpcTransportError = null;
+
+  try {
+    const handle = await acquireCachedLocalGatewayRpcClient({
+      dashboardUrl,
+      disableCache: true,
+    });
+    const { client } = handle;
+    const runId = createGatewayRequestId();
+    let timedOut = false;
+
+    try {
+      let unsubscribe = () => {};
+      let timer = null;
+      const terminalPayloadPromise = new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          unsubscribe();
+          reject(new Error("workflow run timeout"));
+        }, timeoutMs);
+
+        unsubscribe = client.onChatEvent((payload) => {
+          const eventPayload = isPlainObject(payload) ? payload : null;
+          if (!eventPayload) {
+            return;
+          }
+          if (
+            typeof eventPayload.sessionKey === "string" &&
+            eventPayload.sessionKey.trim() &&
+            !sessionKeysLikelyMatch(sessionKey, eventPayload.sessionKey)
+          ) {
+            return;
+          }
+          if (
+            typeof eventPayload.runId === "string" &&
+            eventPayload.runId.trim() &&
+            eventPayload.runId.trim() !== runId
+          ) {
+            return;
+          }
+          if (eventPayload.state === "delta") {
+            return;
+          }
+          clearTimeout(timer);
+          unsubscribe();
+          resolve(eventPayload);
+        });
+      });
+
+      try {
+        await client.request("chat.send", {
+          sessionKey,
+          message,
+          deliver: false,
+          idempotencyKey: runId,
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        unsubscribe();
+        throw error;
+      }
+
+      const payload = await terminalPayloadPromise;
+      if (payload?.state === "final") {
+        return {
+          ok: true,
+          payload,
+          runId,
+        };
+      }
+      return {
+        ok: false,
+        payload,
+        runId,
+        error:
+          typeof payload?.errorMessage === "string" && payload.errorMessage.trim()
+            ? payload.errorMessage.trim()
+            : payload?.state === "aborted"
+              ? "workflow aborted"
+              : "workflow failed",
+      };
+    } catch (error) {
+      if (timedOut) {
+        try {
+          await abortGatewayChat({
+            dashboardUrl,
+            sessionKey,
+            runId,
+          });
+        } catch {
+          // ignore abort cleanup failure
+        }
+      }
+      handle.invalidate();
+      rpcTransportError = error instanceof Error ? error : new Error("workflow run failed");
+    } finally {
+      handle.release();
+    }
+  } catch (error) {
+    rpcTransportError = error instanceof Error ? error : new Error("workflow run failed");
   }
+
+  const responsesResult = await attemptResponsesRequest();
+  if (responsesResult && !responsesResult.unavailable) {
+    return responsesResult;
+  }
+
+  return {
+    ok: false,
+    payload: null,
+    runId: "",
+    error: rpcTransportError?.message || "workflow run failed",
+  };
 }
 
 function truncateCommercePromptSection(value, maxLength = 6000) {
@@ -8824,6 +10186,73 @@ function buildCommerceWorkflowPlan(workflow) {
           ],
         ],
       };
+    case "support-inbox-triage":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "support-triage-pack",
+              label: "客服分诊包",
+              agentId: "customer-service-dept",
+              instructions: [
+                "输出客服分诊包，必须包含：",
+                "## 会话分类",
+                "## 风险等级",
+                "## 自动回复建议",
+                "## 转人工条件",
+                "## 审计备注",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
+    case "support-after-sale-review":
+      return {
+        engine: "native-orchestrator",
+        stages: [
+          [
+            {
+              id: "support-case-review",
+              label: "售后结论",
+              agentId: "customer-service-dept",
+              instructions: [
+                "输出售后审核结论，必须包含：",
+                "## Case Summary",
+                "## Risk Level",
+                "## Recommended Reply",
+                "## Escalation Trigger",
+              ].join("\n"),
+            },
+          ],
+          [
+            {
+              id: "support-finance-review",
+              label: "财务影响",
+              agentId: "finance-dept",
+              instructions: [
+                "结合售后结论，输出财务影响分析，必须包含：",
+                "## Refund Exposure",
+                "## Compensation Boundary",
+                "## Margin Risk",
+                "## Approval Recommendation",
+              ].join("\n"),
+            },
+            {
+              id: "support-ops-review",
+              label: "运营检查",
+              agentId: "ops-dept",
+              instructions: [
+                "结合售后结论，输出运营检查项，必须包含：",
+                "## SOP Checks",
+                "## Manual Review Rules",
+                "## Page / Policy Fixes",
+                "## Owner",
+              ].join("\n"),
+            },
+          ],
+        ],
+      };
     case "content-sprint":
       return {
         engine: "native-orchestrator",
@@ -9037,35 +10466,22 @@ async function openCommerceSession(payload) {
   const latestAssistantMessage = findLatestAssistantMessage(messages);
   const normalizedSessions = Array.isArray(sessions?.sessions)
     ? sessions.sessions.map((entry) => {
-        if (!isPlainObject(entry) || !sessionKeysLikelyMatch(sessionKey, entry.key)) {
+        if (!isPlainObject(entry)) {
           return entry;
         }
 
-        const stopReason =
-          typeof latestAssistantMessage?.stopReason === "string"
-            ? latestAssistantMessage.stopReason.trim().toLowerCase()
-            : "";
-        const errorMessage =
-          typeof latestAssistantMessage?.errorMessage === "string"
-            ? latestAssistantMessage.errorMessage.trim()
-            : "";
-
-        if (stopReason === "aborted" || errorMessage) {
-          return {
-            ...entry,
-            status: "aborted",
-            abortedLastRun: true,
-          };
+        if (sessionKeysLikelyMatch(sessionKey, entry.key)) {
+          return normalizeGatewaySessionStatusEntry(entry, latestAssistantMessage);
         }
 
-        if (latestAssistantMessage && entry.status === "running") {
-          return {
-            ...entry,
-            status: "done",
-          };
+        if (entry.status === "running") {
+          return normalizeGatewaySessionStatusEntry(
+            entry,
+            findLatestAssistantMessageInSessionFile(resolveSessionFilePathFromEntry(entry)),
+          );
         }
 
-        return entry;
+        return normalizeGatewaySessionStatusEntry(entry, null);
       })
     : [];
 
@@ -9508,7 +10924,23 @@ async function bootstrapLocalOpenClawPayload(payload) {
         error: preparedPayload.error || "本地 SSH 隧道启动失败。",
       };
     }
-    const effectivePayload = preparedPayload.payload;
+    const modelSelection = await resolveHealthyManagedModelPayload(preparedPayload.payload);
+    if (!modelSelection.ok) {
+      return {
+        ok: false,
+        logPath: LOCAL_BOOTSTRAP_LOG,
+        error: modelSelection.error || "当前本地模型不可用，请稍后重试。",
+        modelId: modelSelection.modelId,
+        requestedModelId: modelSelection.requestedModelId,
+        allowedModelIds: modelSelection.allowedModelIds,
+        unhealthyModelIds: modelSelection.unhealthyModelIds,
+        probeResults: modelSelection.probeResults,
+      };
+    }
+    if (modelSelection.warning) {
+      appendLocalBootstrapLog(`managed model fallback applied (${modelSelection.warning})`);
+    }
+    const effectivePayload = modelSelection.payload;
 
     launcherPath = createLocalBootstrapScript({
       ...effectivePayload,
@@ -9576,6 +11008,13 @@ async function bootstrapLocalOpenClawPayload(payload) {
       logPath: LOCAL_BOOTSTRAP_LOG,
       dashboardUrl: payload.dashboardUrl,
       browserControlUrl: payload.browserControlUrl,
+      modelId: ensuredAuthState.modelId || modelSelection.modelId,
+      requestedModelId: modelSelection.requestedModelId,
+      allowedModelIds: ensuredAuthState.allowedModelIds || modelSelection.allowedModelIds || [],
+      unhealthyModelIds: modelSelection.unhealthyModelIds || [],
+      probeResults: modelSelection.probeResults || [],
+      modelSelectionWarning: modelSelection.warning || "",
+      effectivePayload,
       status,
     };
   } catch (error) {
@@ -9613,6 +11052,22 @@ if (IS_DESKTOP_HELPER_MODE) {
       getCommerceRun,
       listCommerceRuns,
       runLocalGatewayChatTask,
+      listSupportPlatforms,
+      getSupportPlatformStatus,
+      getSupportSetupStatus,
+      pullSupportInbox,
+      getSupportThread,
+      runSupportTriage,
+      approveSupportReplyAction,
+      approveSupportActionRequest,
+      listSupportAudit,
+      setSupportAutomationRules,
+      requestSupportAccessibility,
+      confirmSupportSetupStep,
+      startSupportPlatformMonitor,
+      stopSupportPlatformMonitor,
+      bindSupportStore,
+      inspectSupportUI,
     },
   };
 } else {
@@ -9849,7 +11304,78 @@ app.whenReady().then(async () => {
     return openCommerceArtifact(payload);
   });
 
+  ipcMain.handle("xiaolanbu:list-support-platforms", async () => {
+    return listSupportPlatforms();
+  });
+
+  ipcMain.handle("xiaolanbu:get-support-platform-status", async (_event, payload) => {
+    return getSupportPlatformStatus(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:get-support-setup-status", async (_event, payload) => {
+    return getSupportSetupStatus(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:pull-support-inbox", async (_event, payload) => {
+    return pullSupportInbox(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:get-support-thread", async (_event, payload) => {
+    return getSupportThread(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:run-support-triage", async (_event, payload) => {
+    return runSupportTriage(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:approve-support-reply", async (_event, payload) => {
+    return approveSupportReplyAction(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:approve-support-action", async (_event, payload) => {
+    return approveSupportActionRequest(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:list-support-audit", async (_event, payload) => {
+    return listSupportAudit(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:set-support-automation-rules", async (_event, payload) => {
+    const result = setSupportAutomationRules(payload);
+    refreshSupportAutomationLoops();
+    return result;
+  });
+
+  ipcMain.handle("xiaolanbu:request-support-accessibility", async (_event, payload) => {
+    return requestSupportAccessibility(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:confirm-support-setup-step", async (_event, payload) => {
+    return confirmSupportSetupStep(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:start-support-platform-monitor", async (_event, payload) => {
+    const result = await startSupportPlatformMonitor(payload);
+    refreshSupportAutomationLoops();
+    return result;
+  });
+
+  ipcMain.handle("xiaolanbu:stop-support-platform-monitor", async (_event, payload) => {
+    const result = stopSupportPlatformMonitor(payload);
+    refreshSupportAutomationLoops();
+    return result;
+  });
+
+  ipcMain.handle("xiaolanbu:bind-support-store", async (_event, payload) => {
+    return bindSupportStore(payload);
+  });
+
+  ipcMain.handle("xiaolanbu:inspect-support-ui", async (_event, payload) => {
+    return inspectSupportUI(payload);
+  });
+
   const win = createWindow();
+  refreshSupportAutomationLoops();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -9860,6 +11386,7 @@ app.whenReady().then(async () => {
 }
 
 app.on("window-all-closed", () => {
+  stopSupportAutomationLoops();
   if (process.platform !== "darwin") {
     app.quit();
   }

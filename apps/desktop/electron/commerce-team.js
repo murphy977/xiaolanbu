@@ -139,6 +139,22 @@ const COMMERCE_WORKFLOW_DEFINITIONS = Object.freeze([
     availability: "ready",
   },
   {
+    id: "support-inbox-triage",
+    label: "客服分诊链路",
+    description: "客服对会话做分类、风险分级和自动回复建议",
+    targetAgentId: "customer-service-dept",
+    proseFile: "commerce/workflows/support-inbox-triage.prose",
+    availability: "ready",
+  },
+  {
+    id: "support-after-sale-review",
+    label: "售后审核链路",
+    description: "客服 -> 财务 -> 运营，输出售后处置建议和升级规则",
+    targetAgentId: "customer-service-dept",
+    proseFile: "commerce/workflows/support-after-sale-review.prose",
+    availability: "ready",
+  },
+  {
     id: "content-sprint",
     label: "内容部专项",
     description: "商品文案 -> 短视频脚本 -> 直播话术",
@@ -254,6 +270,7 @@ const ROLE_LIBRARY = {
         "",
         "- 输出高频问答、打消顾虑话术和催单路径。",
         "- 先解决顾虑，再引导转化。",
+        "- 如果用户没有说明商品或平台，不要输出跨品类通用模板，先追问一句补齐上下文。",
       ].join("\n"),
     },
     {
@@ -264,6 +281,21 @@ const ROLE_LIBRARY = {
         "",
         "- 输出退换货、投诉安抚和赔付边界方案。",
         "- 风险升级项必须标红说明。",
+        "- 如果缺少商品或平台上下文，先问一个澄清问题，不要直接生成泛化售后话术。",
+      ].join("\n"),
+    },
+    {
+      fileName: "support-triage.md",
+      title: "实时分诊",
+      content: [
+        "# 实时分诊",
+        "",
+        "- 先判断会话场景：售前 / 物流 / 退款 / 投诉 / 改地址 / 商品问题 / 平台规则。",
+        "- 再判断风险级别：`low` / `medium` / `high`。",
+        "- 再判断动作：`auto-reply` / `needs-context` / `human-review` / `blocked`。",
+        "- 物流查询、基础 FAQ、基础售后说明默认优先往低风险自动回复收敛。",
+        "- 退款同意、改地址、赔付承诺、重发货、投诉升级默认不能自动执行，至少进入人工审批。",
+        "- 当被要求输出结构化分诊结论时，优先返回可解析 JSON，再补最小必要说明。",
       ].join("\n"),
     },
   ],
@@ -424,7 +456,11 @@ function buildAgentManagedFiles(agent) {
     "你的工作方式：",
     "",
     "- 直接、专业、可执行。",
-    "- 先澄清任务边界，再生成可交付结果。",
+    "- 默认使用简体中文输出；只有用户明确要求其他语言时才切换。",
+    "- 先判断现有信息是否足够直接开做；如果能做，就先给可交付草稿，不要把回复卡在追问里。",
+    "- 信息不足时，先明确假设并继续输出；只有缺失信息会实质改变结论或会造成明显误导时，才先追问。",
+    "- 如果任务明显依赖具体商品 / 类目 / 平台 / 价格带等关键上下文，而这些信息既不在用户消息里，也不在 `BUSINESS.md` 或 `commerce/shared/current-brief.md` 里，就先追问 1 个最关键的问题；不要编造商品信息，更不要跳到无关类目。",
+    "- 对“标题、卖点、上新排期、FAQ、售后话术、投放方案”这类直接交付物，如果缺少商品上下文，禁止先输出通用模板，必须先问清楚“是哪个商品 / 哪个平台”。",
     "- 输出默认包含：目标理解、执行建议、风险提醒、下一步。",
     agent.availability === "coming-soon"
       ? "- 当前仍处于 Phase 1 入口阶段，先输出策略规划、清单和提示词，不承诺图像/视频成片。"
@@ -629,6 +665,50 @@ function buildAgentManagedFiles(agent) {
     ].join("\n");
   }
 
+  if (agent.id === "customer-service-dept") {
+    managed["commerce/support/automation.md"] = [
+      "# 客服自动化",
+      "",
+      "- V1 重点覆盖：物流查询、基础售前 FAQ、基础售后说明。",
+      "- 退款同意、改地址、赔付承诺、重发货、投诉升级默认进入人工审批。",
+      "- 当桌面端给你结构化客服线程时，优先输出 JSON 决策，再补最小必要说明。",
+      "- 分诊输出必须包含：intent、riskLevel、nextAction、replyDraft、humanReason、requestedActions。",
+      "",
+    ].join("\n");
+
+    managed["commerce/workflows/support-inbox-triage.prose"] = [
+      "# 客服分诊链路",
+      "",
+      'session """Read ./BUSINESS.md, ./commerce/support/automation.md, and ./commerce/shared/current-brief.md when available. Then output one support triage pack with: 会话分类、风险等级、自动回复建议、转人工条件、审计备注。"""',
+    ].join("\n");
+
+    managed["commerce/workflows/support-after-sale-review.prose"] = [
+      "# 售后审核链路",
+      "",
+      "agent finance:",
+      "  model: openai/gpt-5.4",
+      '  prompt: """You are a finance reviewer. Estimate refund, compensation, and gross-margin impact for the current after-sales case."""',
+      "",
+      "agent operations:",
+      "  model: openai/gpt-4o",
+      '  prompt: """You are an operations reviewer. Output SOP checks, escalation rules, and what must be handled manually."""',
+      "",
+      'let brief = session "Read ./BUSINESS.md, ./commerce/support/automation.md, and ./commerce/shared/current-brief.md. Summarize the after-sales case, constraints, and requested resolution."',
+      "",
+      "parallel:",
+      "  finance_review = session: finance",
+      '    prompt: "Estimate cost and refund implications for this after-sales review."',
+      "    context: brief",
+      "",
+      "  ops_review = session: operations",
+      '    prompt: "Turn this after-sales case into an SOP and escalation checklist."',
+      "    context: brief",
+      "",
+      'output result = session """As customer-service lead, produce one after-sales review memo with: case summary, risk level, recommended reply, finance impact, ops checks, and whether it must be sent to a human approver."""',
+      "  context: { brief, finance_review, ops_review }",
+    ].join("\n");
+  }
+
   if (agent.id === "content-dept") {
     managed["commerce/workflows/content-sprint.prose"] = [
       "# 内容部专项",
@@ -684,9 +764,61 @@ function buildAgentManagedFiles(agent) {
   return managed;
 }
 
+function buildAgentScaffoldFiles(agent) {
+  return {
+    "SYSTEM.md": [
+      "# SYSTEM.md",
+      "",
+      "- This workspace is already configured for Xiaolanbu commerce work.",
+      "- Read `AGENTS.md`, `SOUL.md`, `BUSINESS.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, and `MEMORY.md` when they exist.",
+      "- Do not run a first-run ritual in this workspace.",
+      "",
+    ].join("\n"),
+    "PERSONA.md": [
+      "# PERSONA.md",
+      "",
+      "- Canonical persona lives in `SOUL.md`.",
+      "- Keep the tone direct, pragmatic, and delivery-oriented.",
+      "",
+    ].join("\n"),
+    "IDENTITY.md": [
+      "# IDENTITY.md",
+      "",
+      `- Name: ${agent.label}`,
+      `- Department: ${agent.department}`,
+      "- Team: Xiaolanbu Commerce",
+      `- Default model: ${agent.defaultModelId}`,
+      "",
+    ].join("\n"),
+    "USER.md": [
+      "# USER.md",
+      "",
+      "- Primary user: Xiaolanbu desktop operator.",
+      "- Working mode: e-commerce planning, content, SOP, and workflow delivery.",
+      "- Preference: concise, production-ready output with explicit assumptions.",
+      "",
+    ].join("\n"),
+    "MEMORY.md": [
+      "# MEMORY.md",
+      "",
+      "No durable department memory has been recorded yet.",
+      "",
+    ].join("\n"),
+    "SESSION_STARTUP.md": [
+      "# SESSION_STARTUP.md",
+      "",
+      "- Read the available workspace context files first.",
+      "- Greet briefly after `/new` or `/reset`, then ask what commerce task needs to be handled.",
+      "- If a startup file is missing, continue normally instead of surfacing internal file-read noise.",
+      "",
+    ].join("\n"),
+  };
+}
+
 module.exports = {
   COMMERCE_AGENT_BLUEPRINTS,
   COMMERCE_WORKFLOW_DEFINITIONS,
   buildCommerceRuntimeDefinitions,
   buildAgentManagedFiles,
+  buildAgentScaffoldFiles,
 };

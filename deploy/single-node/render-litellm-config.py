@@ -96,6 +96,61 @@ def parse_catalog():
             add(alias, upstream, profile_id)
 
     add(default_alias, default_upstream, "default")
+    support_profile_id = next(
+        (item["profile"]["id"] for item in items if item["alias"] == default_alias),
+        "default",
+    )
+    for support_model in parse_support_models():
+        add(
+            support_model["alias"],
+            support_model["upstream"],
+            support_model["profile_id"] or support_profile_id,
+        )
+    return items
+
+
+def parse_support_models():
+    raw = (
+        (os.environ.get("XLB_GATEWAY_SUPPORT_MODELS") or "").strip()
+        or (os.environ.get("XLB_GATEWAY_EMBEDDING_MODEL") or "").strip()
+        or "text-embedding-v4@qwen"
+    )
+    if not raw:
+        return []
+    items = []
+    seen = set()
+    for chunk in raw.split(","):
+        entry = chunk.strip()
+        if not entry:
+            continue
+        if "=" in entry:
+            alias, upstream_with_profile = entry.split("=", 1)
+            alias = alias.strip()
+        else:
+            alias = entry
+            upstream_with_profile = entry
+
+        at_index = upstream_with_profile.rfind("@")
+        if at_index >= 0:
+            upstream = upstream_with_profile[:at_index].strip()
+            profile_id = upstream_with_profile[at_index + 1 :].strip()
+            if "=" not in entry:
+                alias = upstream
+        else:
+            upstream = upstream_with_profile.strip()
+            profile_id = ""
+
+        normalized_alias = alias.strip()
+        if not normalized_alias or normalized_alias in seen:
+            continue
+        seen.add(normalized_alias)
+        items.append(
+            {
+                "alias": normalized_alias,
+                "upstream": upstream or normalized_alias,
+                "profile_id": profile_id,
+            }
+        )
     return items
 
 

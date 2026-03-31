@@ -233,7 +233,7 @@ async function runLocalChatSmokeTest() {
     await textarea.press("Enter");
 
     await page.waitForFunction(
-      ({ expected, userBefore, assistantBefore }) => {
+      ({ expected, promptText, userBefore, assistantBefore }) => {
         const userTexts = Array.from(
           document.querySelectorAll(".chat-thread .chat-group.user .chat-text"),
         ).map((node) => (node.textContent || "").trim());
@@ -242,11 +242,18 @@ async function runLocalChatSmokeTest() {
         ).map((node) => (node.textContent || "").trim());
         const userExpanded = userTexts.length > userBefore;
         const assistantExpanded = assistantTexts.length > assistantBefore;
+        const lastUser = userTexts[userTexts.length - 1] || "";
         const lastAssistant = assistantTexts[assistantTexts.length - 1] || "";
-        return userExpanded && assistantExpanded && lastAssistant.includes(expected);
+        return (
+          userExpanded &&
+          assistantExpanded &&
+          lastUser.includes(promptText) &&
+          lastAssistant.includes(expected)
+        );
       },
       {
         expected: expectedReply,
+        promptText: prompt,
         userBefore: userCountBefore,
         assistantBefore: assistantCountBefore,
       },
@@ -292,11 +299,8 @@ async function runLocalChatSmokeTest() {
       });
     }
 
-    const newUserMessageIndex = Math.min(userCountBefore, Math.max((await userMessages.count()) - 1, 0));
-    const newAssistantMessageIndex = Math.min(
-      assistantCountBefore,
-      Math.max((await assistantMessages.count()) - 1, 0),
-    );
+    const newUserMessageIndex = Math.max((await userMessages.count()) - 1, 0);
+    const newAssistantMessageIndex = Math.max((await assistantMessages.count()) - 1, 0);
     const lastAssistantText = await assistantMessages.nth(newAssistantMessageIndex).innerText();
     const lastUserText = await userMessages.nth(newUserMessageIndex).innerText();
 

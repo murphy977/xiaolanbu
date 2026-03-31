@@ -184,7 +184,7 @@ function resolveManagedGatewaySupportModelIds() {
   const rawConfigured =
     process.env.XLB_GATEWAY_SUPPORT_MODELS?.trim() ??
     process.env.XLB_GATEWAY_EMBEDDING_MODEL?.trim() ??
-    "text-embedding-3-small";
+    "text-embedding-v4@qwen";
 
   if (!rawConfigured) {
     return [];
@@ -195,6 +195,11 @@ function resolveManagedGatewaySupportModelIds() {
       rawConfigured
         .split(",")
         .map((item) => item.trim())
+        .map((item) => {
+          const entry = item.includes("=") ? item.split("=", 2)[0]?.trim() : item;
+          const atIndex = entry.lastIndexOf("@");
+          return atIndex >= 0 ? entry.slice(0, atIndex).trim() : entry;
+        })
         .filter(Boolean),
     ),
   );

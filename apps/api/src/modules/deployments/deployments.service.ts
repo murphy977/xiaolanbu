@@ -1498,6 +1498,14 @@ export class DeploymentsService {
       "        return compat",
       "    return compat",
       "",
+      "def resolve_model_reasoning(model_id):",
+      "    normalized = model_id.strip().lower() if isinstance(model_id, str) else ''",
+      "    if not normalized:",
+      "        return False",
+      "    if normalized.startswith('gpt-5') or normalized.startswith('o1') or normalized.startswith('o3') or normalized.startswith('o4'):",
+      "        return True",
+      "    return False",
+      "",
       "def ensure_provider_config(providers, provider_id, model_id, base_url, api_key):",
       "    current_provider = dict(providers.get(provider_id) or {}) if is_dict(providers.get(provider_id)) else {}",
       "    current_provider['api'] = 'openai-completions'",
@@ -1537,7 +1545,7 @@ export class DeploymentsService {
       "        item['cost'] = cost",
       "        item['contextWindow'] = max(int(item.get('contextWindow') or 0), 262144)",
       "        item['maxTokens'] = max(int(item.get('maxTokens') or 0), 8192)",
-      "        item['reasoning'] = False",
+      "        item['reasoning'] = resolve_model_reasoning(str(item.get('id') or model_id))",
       "        compat = dict(item.get('compat') or {}) if is_dict(item.get('compat')) else {}",
       "        next_compat = resolve_model_compat(str(item.get('id') or model_id))",
       "        compat['supportsUsageInStreaming'] = next_compat['supportsUsageInStreaming']",
@@ -2051,7 +2059,7 @@ export class DeploymentsService {
     const rawConfigured =
       process.env.XLB_GATEWAY_SUPPORT_MODELS?.trim() ??
       process.env.XLB_GATEWAY_EMBEDDING_MODEL?.trim() ??
-      "text-embedding-3-small";
+      "text-embedding-v4@qwen";
 
     if (!rawConfigured) {
       return [];
@@ -2062,6 +2070,11 @@ export class DeploymentsService {
         rawConfigured
           .split(",")
           .map((item) => item.trim())
+          .map((item) => {
+            const entry = item.includes("=") ? item.split("=", 2)[0]?.trim() : item;
+            const atIndex = entry.lastIndexOf("@");
+            return atIndex >= 0 ? entry.slice(0, atIndex).trim() : entry;
+          })
           .filter(Boolean),
       ),
     );
