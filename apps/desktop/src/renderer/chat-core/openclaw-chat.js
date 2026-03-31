@@ -1,12 +1,12 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import SHARED_TOOL_DISPLAY_JSON from "../../../../../../openclaw/apps/shared/OpenClawKit/Sources/OpenClawKit/Resources/tool-display.json";
+import SHARED_TOOL_DISPLAY_JSON from "./tool-display.json";
 import {
   defaultTitle,
   formatToolDetailText,
   normalizeToolName,
   resolveToolVerbAndDetailForArgs,
-} from "../../../../../../openclaw/src/agents/tool-display-common.ts";
+} from "./tool-display-common.js";
 
 const TOOL_STREAM_LIMIT = 50;
 const TOOL_STREAM_THROTTLE_MS = 80;
